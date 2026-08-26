@@ -125,7 +125,7 @@ TabletFlow отвечает за **современный, красивый и �
 TabletFlow пока только строится, поэтому нормальная инструкция появится после стабилизации структуры проекта.
 
 ```bash
-git clone https://github.com/<username>/TabletFlow.git
+git clone https://github.com/UnderWeek/TabletFlow.git
 cd TabletFlow
 ```
 
