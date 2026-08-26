@@ -125,7 +125,7 @@ Hardware compatibility is primarily provided by **OpenTabletDriver**.
 TabletFlow is still being built, so development instructions will be added once the project structure stabilizes.
 
 ```bash
-git clone https://github.com/<username>/TabletFlow.git
+git clone https://github.com/UnderWeek/TabletFlow.git
 cd TabletFlow
 ```
 
