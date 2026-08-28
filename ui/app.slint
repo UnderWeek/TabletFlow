@@ -1391,8 +1391,12 @@ component ProfilesPage inherits Rectangle {
 component StartupSubsetting inherits Rectangle {
     in property <bool> expanded;
     in-out property <bool> start-minimized;
+    callback changed();
 
-    height: root.expanded ? AppTheme.row-height : 0px;
+    // This row has a two-line description, so it needs the same height as a
+    // descriptive SwitchRow. Using the single-line row height clipped the
+    // selection background and made the toggle feel vertically misaligned.
+    height: root.expanded ? (AppTheme.compact ? 56px : 62px) : 0px;
     opacity: root.expanded ? 1.0 : 0.0;
     clip: true;
     animate height { duration: AppTheme.reduce-motion ? 0ms : 180ms; }
@@ -1408,7 +1412,7 @@ component StartupSubsetting inherits Rectangle {
             checked: root.start-minimized;
             enabled: root.expanded;
             horizontal-stretch: 1;
-            toggled => { root.start-minimized = !root.start-minimized; }
+            toggled => { root.start-minimized = !root.start-minimized; root.changed(); }
         }
     }
 }
@@ -1429,6 +1433,7 @@ component SettingsPage inherits Rectangle {
     in-out property <bool> low-power-mode: false;
     in-out property <bool> show-diagnostics: false;
     callback open-github();
+    callback settings-changed();
 
     background: AppTheme.canvas;
 
@@ -1460,9 +1465,9 @@ component SettingsPage inherits Rectangle {
                 cross-axis-alignment: center;
                 Icon { name: "theme"; tint: AppTheme.icon; width: 20px; height: 20px; }
                 Text { text: "Theme"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
-                SegmentButton { label: "System"; selected: root.theme == "System"; enabled: true; clicked => { root.theme = "System"; AppTheme.mode = "system"; } }
-                SegmentButton { label: "Light"; selected: root.theme == "Light"; enabled: true; clicked => { root.theme = "Light"; AppTheme.mode = "light"; } }
-                SegmentButton { label: "Dark"; selected: root.theme == "Dark"; enabled: true; clicked => { root.theme = "Dark"; AppTheme.mode = "dark"; } }
+                SegmentButton { label: "System"; selected: root.theme == "System"; enabled: true; clicked => { root.theme = "System"; AppTheme.mode = "system"; root.settings-changed(); } }
+                SegmentButton { label: "Light"; selected: root.theme == "Light"; enabled: true; clicked => { root.theme = "Light"; AppTheme.mode = "light"; root.settings-changed(); } }
+                SegmentButton { label: "Dark"; selected: root.theme == "Dark"; enabled: true; clicked => { root.theme = "Dark"; AppTheme.mode = "dark"; root.settings-changed(); } }
             }
             HorizontalLayout {
                 height: AppTheme.row-height;
@@ -1471,13 +1476,13 @@ component SettingsPage inherits Rectangle {
                 cross-axis-alignment: center;
                 Icon { name: "accent"; tint: AppTheme.icon; width: 20px; height: 20px; }
                 Text { text: "Accent color"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
-                ColorOption { swatch: #8fb5e6; selected: root.accent == "Blue"; enabled: true; clicked => { root.accent = "Blue"; AppTheme.accent = "Blue"; } }
-                ColorOption { swatch: #d6aa72; selected: root.accent == "Amber"; enabled: true; clicked => { root.accent = "Amber"; AppTheme.accent = "Amber"; } }
-                ColorOption { swatch: #9ac7b0; selected: root.accent == "Mint"; enabled: true; clicked => { root.accent = "Mint"; AppTheme.accent = "Mint"; } }
+                ColorOption { swatch: #8fb5e6; selected: root.accent == "Blue"; enabled: true; clicked => { root.accent = "Blue"; AppTheme.accent = "Blue"; root.settings-changed(); } }
+                ColorOption { swatch: #d6aa72; selected: root.accent == "Amber"; enabled: true; clicked => { root.accent = "Amber"; AppTheme.accent = "Amber"; root.settings-changed(); } }
+                ColorOption { swatch: #9ac7b0; selected: root.accent == "Mint"; enabled: true; clicked => { root.accent = "Mint"; AppTheme.accent = "Mint"; root.settings-changed(); } }
             }
             Divider {}
-            SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing throughout TabletFlow"; checked: root.compact-ui; enabled: true; toggled => { root.compact-ui = !root.compact-ui; AppTheme.compact = root.compact-ui; } }
-            SwitchRow { icon: "reduce"; label: "Reduce animations"; description: "Prefer instant transitions"; checked: root.reduce-animations; enabled: true; toggled => { root.reduce-animations = !root.reduce-animations; AppTheme.reduce-motion = root.reduce-animations; } }
+            SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing throughout TabletFlow"; checked: root.compact-ui; enabled: true; toggled => { root.compact-ui = !root.compact-ui; AppTheme.compact = root.compact-ui; root.settings-changed(); } }
+            SwitchRow { icon: "reduce"; label: "Reduce animations"; description: "Prefer instant transitions"; checked: root.reduce-animations; enabled: true; toggled => { root.reduce-animations = !root.reduce-animations; AppTheme.reduce-motion = root.reduce-animations; root.settings-changed(); } }
 
             Rectangle { height: 17px; }
             SectionHeader { icon: "general"; title: "General"; hint: "Applied instantly"; }
@@ -1487,14 +1492,29 @@ component SettingsPage inherits Rectangle {
                 description: "Open TabletFlow when you sign in";
                 checked: root.start-with-system;
                 enabled: true;
-                toggled => { root.start-with-system = !root.start-with-system; }
+                toggled => { root.start-with-system = !root.start-with-system; root.settings-changed(); }
             }
             StartupSubsetting {
                 expanded: root.start-with-system;
                 start-minimized <=> root.start-minimized;
+                changed => { root.settings-changed(); }
             }
-            SwitchRow { icon: "close"; label: "Close to tray"; checked: root.close-to-tray; enabled: false; }
-            SwitchRow { icon: "updates"; label: "Check for updates"; checked: root.check-updates; enabled: false; }
+            SwitchRow {
+                icon: "close";
+                label: "Close to tray";
+                description: "Keep TabletFlow available from the menu bar";
+                checked: root.close-to-tray;
+                enabled: true;
+                toggled => { root.close-to-tray = !root.close-to-tray; root.settings-changed(); }
+            }
+            SwitchRow {
+                icon: "updates";
+                label: "Check for updates";
+                description: "Notify when a new version is available";
+                checked: root.check-updates;
+                enabled: true;
+                toggled => { root.check-updates = !root.check-updates; root.settings-changed(); }
+            }
 
             Rectangle { height: 17px; }
             SectionHeader { icon: "plugins"; title: "OpenTabletDriver"; hint: "Embedded daemon"; }
@@ -1552,6 +1572,7 @@ component SettingsPage inherits Rectangle {
                     root.polling-interval = "Auto";
                     root.low-power-mode = false;
                     root.show-diagnostics = false;
+                    root.settings-changed();
                 }
             }
 
@@ -1592,6 +1613,28 @@ component SectionPage inherits Rectangle {
     }
 }
 
+export component TrayIcon inherits SystemTrayIcon {
+    icon: @image-url("tray.svg");
+    tooltip: "TabletFlow";
+    title: "TabletFlow";
+    in-out property <bool> shown: true;
+    visible: root.shown;
+
+    callback open();
+    callback quit();
+
+    Menu {
+        MenuItem {
+            title: "Open TabletFlow";
+            activated => { root.open(); }
+        }
+        MenuItem {
+            title: "Quit";
+            activated => { root.quit(); }
+        }
+    }
+}
+
 // Backend state contract: "unknown", "daemon-not-running", "daemon-starting", "daemon-running", "no-tablet", "ready".
 // The default stays unknown until real IPC data is provided by the backend.
 export component MainWindow inherits Window {
@@ -1629,6 +1672,7 @@ export component MainWindow inherits Window {
     callback start-daemon();
     callback retry-backend();
     callback open-github();
+    callback settings-changed();
 
     Rectangle {
         width: parent.width;
@@ -1727,6 +1771,7 @@ export component MainWindow inherits Window {
                     low-power-mode <=> root.low-power-mode;
                     show-diagnostics <=> root.show-diagnostics;
                     open-github => { root.open-github(); }
+                    settings-changed => { root.settings-changed(); }
                 }
                 if root.active-page == "Bindings": SectionPage {
                     page-title: "Bindings";
