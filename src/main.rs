@@ -54,6 +54,19 @@ fn start_daemon() -> bool {
     Command::new(executable).spawn().is_ok()
 }
 
+fn open_github() {
+    const URL: &str = "https://github.com/UnderWeek/TabletFlow";
+
+    #[cfg(target_os = "macos")]
+    let _ = Command::new("open").arg(URL).spawn();
+
+    #[cfg(target_os = "windows")]
+    let _ = Command::new("cmd").args(["/C", "start", "", URL]).spawn();
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let _ = Command::new("xdg-open").arg(URL).spawn();
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.set_backend_state(backend_state().into());
@@ -81,6 +94,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 "daemon-not-running".into()
             });
         }
+    });
+
+    ui.on_open_github(move || {
+        open_github();
     });
 
     ui.run()
