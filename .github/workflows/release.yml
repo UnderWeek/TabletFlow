@@ -23,7 +23,7 @@ jobs:
           - runner: macos-14
             rid: osx-arm64
             arch: arm64
-          - runner: macos-13
+          - runner: macos-15-intel
             rid: osx-x64
             arch: x64
 
@@ -137,6 +137,26 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.x"
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libgbm-dev \
+            libinput-dev \
+            libxcursor-dev \
+            libx11-dev \
+            libx11-xcb-dev \
+            libegl1-mesa-dev \
+            libfontconfig1-dev \
+            libwayland-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            xinput
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
