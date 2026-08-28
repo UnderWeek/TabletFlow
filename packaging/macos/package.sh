@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+OUTPUT_DIR="${1:-$ROOT_DIR/dist}"
+DAEMON_PATH="${OTD_DAEMON_PATH:-}"
+TABLETFLOW_BINARY_PATH="${TABLETFLOW_BINARY_PATH:-$ROOT_DIR/target/release/tabletflow}"
+VERSION="${TABLETFLOW_VERSION:-0.1.0}"
+ARCH="${TABLETFLOW_ARCH:-$(uname -m)}"
+
+if [[ ! -f "$TABLETFLOW_BINARY_PATH" ]]; then
+    echo "TABLETFLOW_BINARY_PATH must point to the TabletFlow executable" >&2
+    exit 1
+fi
+if [[ -z "$DAEMON_PATH" || ! -f "$DAEMON_PATH" ]]; then
+    echo "OTD_DAEMON_PATH must point to OpenTabletDriver.Daemon" >&2
+    exit 1
+fi
+
+APP_DIR="$OUTPUT_DIR/TabletFlow.app"
+STAGING_DIR="$OUTPUT_DIR/.dmg-staging"
+DMG_PATH="$OUTPUT_DIR/TabletFlow-${VERSION}-macos-${ARCH}.dmg"
+
+rm -rf "$APP_DIR" "$STAGING_DIR" "$DMG_PATH"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" "$STAGING_DIR"
+
+cp "$TABLETFLOW_BINARY_PATH" "$APP_DIR/Contents/MacOS/TabletFlow"
+cp "$DAEMON_PATH" "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
+cp "$ROOT_DIR/packaging/macos/Info.plist" "$APP_DIR/Contents/Info.plist"
+if [[ -n "${OTD_LICENSE_PATH:-}" && -f "$OTD_LICENSE_PATH" ]]; then
+    cp "$OTD_LICENSE_PATH" "$APP_DIR/Contents/Resources/OpenTabletDriver.LICENSE"
+fi
+chmod +x "$APP_DIR/Contents/MacOS/TabletFlow" "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
+
+ln -s /Applications "$STAGING_DIR/Applications"
+cp -R "$APP_DIR" "$STAGING_DIR/TabletFlow.app"
+hdiutil create -quiet -volname TabletFlow -srcfolder "$STAGING_DIR" -format UDZO "$DMG_PATH"
+rm -rf "$STAGING_DIR"
+
+echo "$DMG_PATH"

@@ -841,6 +841,7 @@ component SwitchRow inherits Rectangle {
     callback toggled();
 
     height: root.description == "" ? AppTheme.row-height : (AppTheme.compact ? 56px : 62px);
+    border-radius: 15px;
     opacity: root.enabled ? 1.0 : 0.43;
     background: touch.pressed && root.enabled ? AppTheme.accent-soft : (touch.has-hover && root.enabled ? AppTheme.surface-alt : transparent);
 

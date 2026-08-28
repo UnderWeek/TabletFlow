@@ -1,11 +1,14 @@
 slint::include_modules!();
 
-use slint::CloseRequestResponse;
-use slint::ComponentHandle;
+use slint::{CloseRequestResponse, ComponentHandle, Timer, TimerMode};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+static EMBEDDED_DAEMON: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 struct Settings {
@@ -329,7 +332,67 @@ fn current_uid() -> String {
         .unwrap_or_else(|| "0".into())
 }
 
+fn daemon_process() -> &'static Mutex<Option<Child>> {
+    EMBEDDED_DAEMON.get_or_init(|| Mutex::new(None))
+}
+
+fn daemon_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(directory) = executable.parent() {
+            candidates.push(directory.join("OpenTabletDriver.Daemon"));
+            candidates.push(directory.join("OpenTabletDriver.Daemon.exe"));
+            candidates.push(directory.join("OpenTabletDriver.Daemon.dll"));
+            candidates.push(directory.join("resources/OpenTabletDriver.Daemon"));
+            candidates.push(directory.join("resources/OpenTabletDriver.Daemon.exe"));
+            candidates.push(directory.join("resources/OpenTabletDriver.Daemon.dll"));
+
+            if let Some(contents) = directory.parent() {
+                candidates.push(contents.join("Resources/OpenTabletDriver.Daemon"));
+                candidates.push(contents.join("Resources/OpenTabletDriver.Daemon.dll"));
+            }
+        }
+    }
+
+    if let Some(resource_root) = std::env::var_os("TABLETFLOW_RESOURCE_DIR") {
+        let resource_root = PathBuf::from(resource_root);
+        candidates.push(resource_root.join("OpenTabletDriver.Daemon"));
+        candidates.push(resource_root.join("OpenTabletDriver.Daemon.exe"));
+        candidates.push(resource_root.join("OpenTabletDriver.Daemon.dll"));
+    }
+
+    candidates
+}
+
+fn embedded_daemon_path() -> Option<PathBuf> {
+    daemon_candidates()
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
+
+fn owned_daemon_is_running() -> bool {
+    let Ok(mut daemon) = daemon_process().lock() else {
+        return false;
+    };
+    let Some(child) = daemon.as_mut() else {
+        return false;
+    };
+
+    match child.try_wait() {
+        Ok(None) => true,
+        Ok(Some(_)) | Err(_) => {
+            *daemon = None;
+            false
+        }
+    }
+}
+
 fn daemon_is_running() -> bool {
+    if owned_daemon_is_running() {
+        return true;
+    }
+
     #[cfg(target_os = "windows")]
     {
         return Command::new("tasklist")
@@ -360,24 +423,46 @@ fn backend_state() -> &'static str {
 }
 
 fn start_daemon() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        if Command::new("open")
-            .args(["-a", "OpenTabletDriver"])
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-        {
-            return true;
-        }
+    if daemon_is_running() {
+        return true;
     }
 
-    #[cfg(target_os = "windows")]
-    let executable = "OpenTabletDriver.Daemon.exe";
-    #[cfg(not(target_os = "windows"))]
-    let executable = "OpenTabletDriver.Daemon";
+    let Some(path) = embedded_daemon_path() else {
+        return false;
+    };
 
-    Command::new(executable).spawn().is_ok()
+    let mut command = if path.extension().is_some_and(|extension| extension == "dll") {
+        let mut command = Command::new("dotnet");
+        command.arg(&path);
+        command
+    } else {
+        Command::new(&path)
+    };
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    let Ok(child) = command.spawn() else {
+        return false;
+    };
+    if let Ok(mut daemon) = daemon_process().lock() {
+        *daemon = Some(child);
+        true
+    } else {
+        false
+    }
+}
+
+fn stop_daemon() {
+    let Ok(mut daemon) = daemon_process().lock() else {
+        return;
+    };
+    let Some(mut child) = daemon.take() else {
+        return;
+    };
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn open_github() {
@@ -403,7 +488,29 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     apply_settings(&ui, &settings);
     let _ = configure_autostart(settings.start_with_system, settings.start_minimized);
-    ui.set_backend_state(backend_state().into());
+
+    let daemon_started = if daemon_is_running() {
+        false
+    } else {
+        start_daemon()
+    };
+    ui.set_backend_state(if daemon_started {
+        "daemon-starting".into()
+    } else {
+        backend_state().into()
+    });
+
+    let daemon_timer = Timer::default();
+    let weak_ui = ui.as_weak();
+    daemon_timer.start(
+        TimerMode::Repeated,
+        Duration::from_millis(1200),
+        move || {
+            if let Some(ui) = weak_ui.upgrade() {
+                ui.set_backend_state(backend_state().into());
+            }
+        },
+    );
 
     let tray = TrayIcon::new()?;
     set_tray_visible(&tray, settings.close_to_tray);
@@ -474,5 +581,7 @@ fn main() -> Result<(), slint::PlatformError> {
     if settings.start_with_system && settings.start_minimized {
         ui.window().set_minimized(true);
     }
-    slint::run_event_loop()
+    let event_loop_result = slint::run_event_loop();
+    stop_daemon();
+    event_loop_result
 }

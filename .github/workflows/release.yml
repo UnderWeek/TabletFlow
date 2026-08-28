@@ -1,0 +1,202 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  OTD_REF: v0.6.7
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            rid: osx-arm64
+            arch: arm64
+          - runner: macos-13
+            rid: osx-x64
+            arch: x64
+
+    steps:
+      - name: Checkout TabletFlow
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenTabletDriver
+        uses: actions/checkout@v4
+        with:
+          repository: OpenTabletDriver/OpenTabletDriver
+          ref: ${{ env.OTD_REF }}
+          path: opentabletdriver
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build TabletFlow
+        run: cargo build --release
+
+      - name: Build OpenTabletDriver daemon
+        env:
+          OTD_ROOT: ${{ github.workspace }}/opentabletdriver
+          DOTNET_COMMAND: dotnet
+        run: ./packaging/build-daemon.sh "${{ matrix.rid }}" build/otd
+
+      - name: Package macOS DMG
+        env:
+          OTD_DAEMON_PATH: ${{ github.workspace }}/build/otd/OpenTabletDriver.Daemon
+          OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
+          TABLETFLOW_ARCH: ${{ matrix.arch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$VERSION" == "$GITHUB_REF_NAME" ]]; then VERSION="0.1.0"; fi
+          TABLETFLOW_VERSION="$VERSION" ./packaging/macos/package.sh dist
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TabletFlow-macos-${{ matrix.arch }}
+          path: dist/*.dmg
+
+  windows:
+    name: Windows x64
+    runs-on: windows-2025
+    steps:
+      - name: Checkout TabletFlow
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenTabletDriver
+        uses: actions/checkout@v4
+        with:
+          repository: OpenTabletDriver/OpenTabletDriver
+          ref: ${{ env.OTD_REF }}
+          path: opentabletdriver
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build TabletFlow
+        run: cargo build --release
+
+      - name: Build OpenTabletDriver daemon
+        env:
+          OTD_ROOT: ${{ github.workspace }}/opentabletdriver
+          DOTNET_COMMAND: dotnet
+        shell: bash
+        run: ./packaging/build-daemon.sh win-x64 build/otd
+
+      - name: Package Windows ZIP
+        shell: pwsh
+        env:
+          OTD_DAEMON_PATH: ${{ github.workspace }}/build/otd/OpenTabletDriver.Daemon.exe
+          OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
+          TABLETFLOW_BINARY_PATH: ${{ github.workspace }}/target/release/tabletflow.exe
+        run: |
+          $version = if ($env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME.Substring(1) } else { "0.1.0" }
+          ./packaging/windows/package.ps1 -OutputDirectory dist -Version $version
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TabletFlow-windows-x64
+          path: dist/*.zip
+
+  linux:
+    name: Linux x64
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout TabletFlow
+        uses: actions/checkout@v4
+
+      - name: Checkout OpenTabletDriver
+        uses: actions/checkout@v4
+        with:
+          repository: OpenTabletDriver/OpenTabletDriver
+          ref: ${{ env.OTD_REF }}
+          path: opentabletdriver
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build TabletFlow
+        run: cargo build --release
+
+      - name: Build OpenTabletDriver daemon
+        env:
+          OTD_ROOT: ${{ github.workspace }}/opentabletdriver
+          DOTNET_COMMAND: dotnet
+        run: ./packaging/build-daemon.sh linux-x64 build/otd
+
+      - name: Package Linux archive
+        env:
+          OTD_DAEMON_PATH: ${{ github.workspace }}/build/otd/OpenTabletDriver.Daemon
+          OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
+          TABLETFLOW_ARCH: x64
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$VERSION" == "$GITHUB_REF_NAME" ]]; then VERSION="0.1.0"; fi
+          TABLETFLOW_VERSION="$VERSION" ./packaging/linux/package.sh dist
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TabletFlow-linux-x64
+          path: dist/*.tar.gz
+
+  publish:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate release notes with Haiku
+        env:
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          AI_PROVIDER_URL: ${{ secrets.AI_PROVIDER_URL }}
+          AI_SECRET_KEY: ${{ secrets.AI_SECRET_KEY }}
+        run: python3 scripts/release_notes.py > release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "TabletFlow $VERSION" \
+            --notes-file release-notes.md \
+            dist/*
