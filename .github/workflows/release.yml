@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing tag to publish, for example v0.1.1. Leave empty for build-only validation."
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -11,6 +16,7 @@ permissions:
 
 env:
   OTD_REF: v0.6.7
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   macos:
@@ -30,6 +36,8 @@ jobs:
     steps:
       - name: Checkout TabletFlow
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Checkout OpenTabletDriver
         uses: actions/checkout@v4
@@ -61,8 +69,8 @@ jobs:
           OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
           TABLETFLOW_ARCH: ${{ matrix.arch }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" == "$GITHUB_REF_NAME" ]]; then VERSION="0.1.0"; fi
+          VERSION="${RELEASE_TAG#v}"
+          if [[ "$VERSION" == "$RELEASE_TAG" ]]; then VERSION="0.1.0"; fi
           TABLETFLOW_VERSION="$VERSION" ./packaging/macos/package.sh dist
 
       - name: Upload macOS artifact
@@ -77,6 +85,8 @@ jobs:
     steps:
       - name: Checkout TabletFlow
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Checkout OpenTabletDriver
         uses: actions/checkout@v4
@@ -110,7 +120,7 @@ jobs:
           OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
           TABLETFLOW_BINARY_PATH: ${{ github.workspace }}/target/release/tabletflow.exe
         run: |
-          $version = if ($env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME.Substring(1) } else { "0.1.0" }
+          $version = if ($env:RELEASE_TAG.StartsWith("v")) { $env:RELEASE_TAG.Substring(1) } else { "0.1.0" }
           ./packaging/windows/package.ps1 -OutputDirectory dist -Version $version
 
       - name: Upload Windows artifact
@@ -125,6 +135,8 @@ jobs:
     steps:
       - name: Checkout TabletFlow
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Checkout OpenTabletDriver
         uses: actions/checkout@v4
@@ -176,8 +188,8 @@ jobs:
           OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
           TABLETFLOW_ARCH: x64
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" == "$GITHUB_REF_NAME" ]]; then VERSION="0.1.0"; fi
+          VERSION="${RELEASE_TAG#v}"
+          if [[ "$VERSION" == "$RELEASE_TAG" ]]; then VERSION="0.1.0"; fi
           TABLETFLOW_VERSION="$VERSION" ./packaging/linux/package.sh dist
 
       - name: Upload Linux artifact
@@ -188,7 +200,9 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'v'))
     needs: [macos, windows, linux]
     runs-on: ubuntu-latest
     steps:
@@ -196,6 +210,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Download release assets
         uses: actions/download-artifact@v4
@@ -214,8 +229,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" \
+          VERSION="${RELEASE_TAG#v}"
+          gh release create "$RELEASE_TAG" \
             --verify-tag \
             --title "TabletFlow $VERSION" \
             --notes-file release-notes.md \

@@ -320,7 +320,7 @@ fn set_tray_visible(tray: &TrayIcon, visible: bool) {
     tray.set_shown(visible);
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
 fn current_uid() -> String {
     Command::new("id")
         .arg("-u")
