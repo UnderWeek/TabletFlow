@@ -1,0 +1,20 @@
+[package]
+name = "tabletflow"
+version = "0.1.0"
+edition = "2021"
+description = "A lightweight tablet configuration frontend for OpenTabletDriver"
+license = "MIT"
+build = "build.rs"
+
+[dependencies]
+slint = "1.17.1"
+
+[build-dependencies]
+slint-build = "1.17.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

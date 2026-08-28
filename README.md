@@ -95,7 +95,7 @@ Planned controls include:
 
 ## 🗺️ Roadmap
 
-- [ ] Application shell & MD3 theme
+- [x] Application shell & MD3 theme (prototype)
 - [ ] Connect to OpenTabletDriver Daemon
 - [ ] Detect connected tablets
 - [ ] Read and apply configuration
@@ -122,7 +122,14 @@ Hardware compatibility is primarily provided by **OpenTabletDriver**.
 
 ## 🔧 Development
 
-TabletFlow is still being built, so development instructions will be added once the project structure stabilizes.
+The first prototype uses Rust and Slint. The UI is compiled into the native binary, with no WebView or JavaScript runtime.
+
+```bash
+cargo run
+cargo build --release
+```
+
+The current prototype contains a lightweight application shell, compact navigation and honest empty states. Device, profile and daemon values remain empty until they are supplied by the OpenTabletDriver backend.
 
 ```bash
 git clone https://github.com/UnderWeek/TabletFlow.git

@@ -1,0 +1,1536 @@
+import { ScrollView } from "std-widgets.slint";
+
+// Small geometry-based icons keep the UI independent from font glyph coverage.
+// The previous Unicode symbols became empty squares on macOS in the bundled font.
+component Icon inherits Rectangle {
+    in property <string> name;
+    in property <color> tint: #9299aa;
+
+    width: 18px;
+    height: 18px;
+    background: transparent;
+
+    if root.name == "area": Rectangle {
+        x: 2px;
+        y: 2px;
+        width: 14px;
+        height: 14px;
+        border-width: 1px;
+        border-color: root.tint;
+        border-radius: 2px;
+    }
+    if root.name == "pen": Rectangle {
+        x: 7px;
+        y: 2px;
+        width: 4px;
+        height: 12px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "plugins": Rectangle {
+        x: 1px;
+        y: 7px;
+        width: 5px;
+        height: 5px;
+        border-radius: 3px;
+        background: root.tint;
+    }
+    if root.name == "plugins": Rectangle {
+        x: 12px;
+        y: 7px;
+        width: 5px;
+        height: 5px;
+        border-radius: 3px;
+        background: root.tint;
+    }
+    if root.name == "plugins": Rectangle {
+        x: 7px;
+        y: 1px;
+        width: 5px;
+        height: 5px;
+        border-radius: 3px;
+        background: root.tint;
+    }
+    if root.name == "profiles": Rectangle {
+        x: 2px;
+        y: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: root.tint;
+    }
+    if root.name == "profiles": Rectangle {
+        x: 7px;
+        y: 7px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "settings" || root.name == "advanced": Rectangle {
+        x: 7px;
+        y: 0px;
+        width: 4px;
+        height: 18px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "settings" || root.name == "advanced": Rectangle {
+        x: 0px;
+        y: 7px;
+        width: 18px;
+        height: 4px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "settings" || root.name == "advanced": Rectangle {
+        x: 4px;
+        y: 4px;
+        width: 10px;
+        height: 10px;
+        border-radius: 6px;
+        border-width: 2px;
+        border-color: root.tint;
+        background: transparent;
+    }
+    if root.name == "logo": Rectangle {
+        x: 3px;
+        y: 3px;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        border-width: 2px;
+        border-color: root.tint;
+    }
+    if root.name == "theme" || root.name == "connection": Rectangle {
+        x: 2px;
+        y: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 8px;
+        border-width: 2px;
+        border-color: root.tint;
+    }
+    if root.name == "accent": Rectangle {
+        x: 4px;
+        y: 4px;
+        width: 10px;
+        height: 10px;
+        border-radius: 6px;
+        background: root.tint;
+    }
+    if root.name == "compact" || root.name == "performance": Rectangle {
+        x: 2px;
+        y: 3px;
+        width: 14px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "compact" || root.name == "performance": Rectangle {
+        x: 2px;
+        y: 8px;
+        width: 10px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "compact" || root.name == "performance": Rectangle {
+        x: 2px;
+        y: 13px;
+        width: 6px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "startup" || root.name == "minimized" || root.name == "tray": Rectangle {
+        x: 3px;
+        y: 3px;
+        width: 12px;
+        height: 12px;
+        border-width: 1px;
+        border-color: root.tint;
+        border-radius: 2px;
+    }
+    if root.name == "startup" || root.name == "minimized" || root.name == "tray": Rectangle {
+        x: 7px;
+        y: 7px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "close": Rectangle {
+        x: 3px;
+        y: 8px;
+        width: 12px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "close": Rectangle {
+        x: 8px;
+        y: 3px;
+        width: 2px;
+        height: 12px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "updates" || root.name == "restart" || root.name == "reset": Rectangle {
+        x: 3px;
+        y: 3px;
+        width: 12px;
+        height: 12px;
+        border-radius: 7px;
+        border-width: 2px;
+        border-color: root.tint;
+        background: transparent;
+    }
+    if root.name == "daemon" || root.name == "config" || root.name == "detect": Rectangle {
+        x: 3px;
+        y: 5px;
+        width: 12px;
+        height: 9px;
+        border-width: 1px;
+        border-color: root.tint;
+        border-radius: 2px;
+    }
+    if root.name == "start-daemon" || root.name == "pause": Rectangle {
+        x: 4px;
+        y: 3px;
+        width: 3px;
+        height: 12px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "start-daemon" || root.name == "pause": Rectangle {
+        x: 11px;
+        y: 3px;
+        width: 3px;
+        height: 12px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "width" || root.name == "height" || root.name == "x" || root.name == "y" || root.name == "rotation" || root.name == "lock" || root.name == "sensitivity" || root.name == "disable-pressure" || root.name == "buttons" || root.name == "button1" || root.name == "button2" || root.name == "test" || root.name == "polling" || root.name == "power" || root.name == "diagnostics": Rectangle {
+        x: 3px;
+        y: 3px;
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: root.tint;
+    }
+    if root.name == "home" || root.name == "general": Rectangle {
+        x: 3px;
+        y: 3px;
+        width: 12px;
+        height: 12px;
+        border-width: 1px;
+        border-color: root.tint;
+        border-radius: 2px;
+    }
+    if root.name == "home" || root.name == "general": Rectangle {
+        x: 7px;
+        y: 9px;
+        width: 4px;
+        height: 6px;
+        background: root.tint;
+    }
+    if root.name == "reduce" || root.name == "focus": Rectangle {
+        x: 3px;
+        y: 8px;
+        width: 12px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "reduce" || root.name == "focus": Rectangle {
+        x: 4px;
+        y: 4px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: root.tint;
+    }
+}
+
+component AppButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 38px;
+    width: root.primary ? 132px : 104px;
+    opacity: root.enabled ? (touch.pressed ? 0.88 : 1.0) : 0.42;
+    border-radius: 19px;
+    background: root.primary ? (touch.pressed ? #ada8ed : #c9c5ff) : (touch.pressed ? #353a49 : (touch.has-hover ? #292d38 : #20232c));
+    border-width: root.primary ? 0px : 1px;
+    border-color: #363b49;
+
+    Text {
+        text: root.label;
+        color: root.primary ? #24223a : #d7d9e3;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component NavItem inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 36px;
+    border-radius: 10px;
+    background: root.selected ? (touch.pressed ? #373d58 : #292d42) : (touch.pressed ? #2a2e3a : (touch.has-hover ? #20232d : transparent));
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        spacing: 10px;
+        cross-axis-alignment: center;
+        Icon {
+            name: root.icon;
+            tint: root.selected ? #c9c5ff : (touch.pressed ? #c1c4d0 : #969bab);
+            width: 18px;
+        }
+        Text {
+            text: root.label;
+            color: root.selected ? #eeedfa : #b8bbc7;
+            font-size: 13px;
+            font-weight: root.selected ? 650 : 450;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component Sidebar inherits Rectangle {
+    in property <string> active-page;
+    callback navigate(string);
+
+    width: 188px;
+    background: #17191f;
+
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 17px;
+        padding-bottom: 17px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            height: 37px;
+            padding-left: 8px;
+            spacing: 9px;
+            cross-axis-alignment: center;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 8px;
+                background: #c9c5ff;
+                Icon {
+                    name: "logo";
+                    tint: #25233b;
+                    x: 3px;
+                    y: 3px;
+                }
+            }
+            Text {
+                text: "TabletFlow";
+                color: #f0eff8;
+                font-size: 15px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle { height: 18px; }
+
+        NavItem {
+            icon: "area";
+            label: "Area";
+            selected: root.active-page == "Area";
+            clicked => { root.navigate("Area"); }
+        }
+        NavItem {
+            icon: "pen";
+            label: "Pen";
+            selected: root.active-page == "Pen";
+            clicked => { root.navigate("Pen"); }
+        }
+        NavItem {
+            icon: "plugins";
+            label: "Plugins";
+            selected: root.active-page == "Plugins";
+            clicked => { root.navigate("Plugins"); }
+        }
+        NavItem {
+            icon: "profiles";
+            label: "Profiles";
+            selected: root.active-page == "Profiles";
+            clicked => { root.navigate("Profiles"); }
+        }
+        NavItem {
+            icon: "settings";
+            label: "Settings";
+            selected: root.active-page == "Settings";
+            clicked => { root.navigate("Settings"); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        height: parent.height;
+        background: #292d38;
+    }
+}
+
+component PageHeader inherits Rectangle {
+    in property <string> icon: "";
+    in property <string> title;
+    in property <string> subtitle;
+
+    height: 61px;
+    HorizontalLayout {
+        spacing: 12px;
+        cross-axis-alignment: center;
+        if root.icon != "": Rectangle {
+            width: 28px;
+            height: 28px;
+            background: transparent;
+            Icon {
+                name: root.icon;
+                tint: #b5afd9;
+                x: 5px;
+                y: 5px;
+            }
+        }
+        VerticalLayout {
+            spacing: 3px;
+            vertical-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.title;
+                color: #f1f0f8;
+                font-size: 23px;
+                font-weight: 700;
+            }
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: #8e95a7;
+                font-size: 12px;
+            }
+        }
+    }
+}
+
+component SectionHeader inherits Rectangle {
+    in property <string> icon: "";
+    in property <string> title;
+    in property <string> hint;
+
+    height: 34px;
+    HorizontalLayout {
+        spacing: 9px;
+        cross-axis-alignment: center;
+        if root.icon != "": Rectangle {
+            width: 22px;
+            height: 22px;
+            background: transparent;
+            Icon {
+                name: root.icon;
+                tint: #aaa5cf;
+                x: 2px;
+                y: 2px;
+            }
+        }
+        Text {
+            text: root.title;
+            color: #dfe0e9;
+            font-size: 14px;
+            font-weight: 650;
+            vertical-alignment: center;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        if root.hint != "": Text {
+            text: root.hint;
+            color: #9b91cc;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: #282c35;
+}
+
+component AvailabilityHint inherits Text {
+    text: "Not available yet";
+    color: #9b91cc;
+    font-size: 11px;
+}
+
+component EmptyState inherits Rectangle {
+    in property <string> heading;
+    in property <string> message;
+    in property <string> detail;
+    in property <string> primary-label;
+    in property <string> secondary-label;
+    callback primary-clicked();
+    callback secondary-clicked();
+
+    background: #111318;
+
+    VerticalLayout {
+        alignment: center;
+        cross-axis-alignment: center;
+        spacing: 12px;
+
+        Text {
+            text: root.heading;
+            color: #f1f0f8;
+            font-size: 23px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.message;
+            color: #d6d7e1;
+            font-size: 15px;
+            horizontal-alignment: center;
+        }
+        if root.detail != "": Text {
+            text: root.detail;
+            color: #898fa1;
+            font-size: 12px;
+            horizontal-alignment: center;
+        }
+        Rectangle { height: 5px; }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: center;
+            if root.primary-label != "": AppButton {
+                label: root.primary-label;
+                primary: true;
+                clicked => { root.primary-clicked(); }
+            }
+            if root.secondary-label != "": AppButton {
+                label: root.secondary-label;
+                primary: false;
+                clicked => { root.secondary-clicked(); }
+            }
+        }
+    }
+}
+
+component DeviceAction inherits Rectangle {
+    in property <string> icon: "";
+    in property <string> label;
+    callback clicked();
+
+    width: 300px;
+    height: 46px;
+    border-radius: 12px;
+    background: touch.pressed ? #2b3040 : (touch.has-hover ? #20242e : transparent);
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 10px;
+        cross-axis-alignment: center;
+        if root.icon != "": Icon {
+            name: root.icon;
+            tint: #aaa5cf;
+            width: 20px;
+            height: 20px;
+        }
+        Text {
+            text: root.label;
+            color: #dfe0e9;
+            font-size: 13px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "›";
+            color: #8b91a3;
+            font-size: 20px;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component DeviceOverview inherits Rectangle {
+    in property <string> device-name;
+    in property <string> active-profile;
+    callback configure-area();
+    callback open-pen();
+    callback open-bindings();
+
+    background: #111318;
+
+    VerticalLayout {
+        alignment: center;
+        cross-axis-alignment: center;
+        spacing: 8px;
+
+        Text {
+            text: root.device-name;
+            color: #f1f0f8;
+            font-size: 24px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+        if root.active-profile != "": Text {
+            text: "Active profile  •  " + root.active-profile;
+            color: #9298aa;
+            font-size: 12px;
+            horizontal-alignment: center;
+        }
+        Rectangle { height: 18px; }
+        DeviceAction {
+            icon: "area";
+            label: "Configure area";
+            clicked => { root.configure-area(); }
+        }
+        DeviceAction {
+            icon: "pen";
+            label: "Pen";
+            clicked => { root.open-pen(); }
+        }
+        DeviceAction {
+            icon: "buttons";
+            label: "Bindings";
+            clicked => { root.open-bindings(); }
+        }
+    }
+}
+
+component ValueRow inherits Rectangle {
+    in property <string> icon: "";
+    in property <string> label;
+    in property <string> value;
+    in property <bool> enabled: true;
+    in property <bool> interactive: false;
+    in property <bool> show-chevron: false;
+    callback clicked();
+
+    height: 49px;
+    opacity: root.enabled ? 1.0 : 0.43;
+    background: touch.pressed && root.enabled && root.interactive ? #2b3040 : (touch.has-hover && root.enabled && root.interactive ? #1b1e26 : transparent);
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        cross-axis-alignment: center;
+        if root.icon != "": Icon {
+            name: root.icon;
+            tint: root.enabled ? #9299aa : #666b79;
+            width: 20px;
+            height: 20px;
+        }
+        Text {
+            text: root.label;
+            color: #d8d9e3;
+            font-size: 13px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        if root.value != "": Text {
+            text: root.value;
+            color: #8f96a8;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        if root.show-chevron && root.interactive: Text {
+            text: "›";
+            color: #7f8698;
+            font-size: 18px;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled && root.interactive;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SwitchVisual inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+
+    width: 42px;
+    height: 26px;
+    border-radius: 13px;
+    background: root.checked ? #67639a : #2a2e38;
+    border-width: 1px;
+    border-color: root.checked ? #918bcf : #464b59;
+    opacity: root.enabled ? 1.0 : 0.55;
+
+    Rectangle {
+        x: root.checked ? 19px : 3px;
+        y: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: root.checked ? #f0efff : #a1a5b2;
+    }
+}
+
+component SwitchRow inherits Rectangle {
+    in property <string> icon: "";
+    in property <string> label;
+    in property <string> description;
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled();
+
+    height: root.description == "" ? 49px : 62px;
+    opacity: root.enabled ? 1.0 : 0.43;
+    background: touch.pressed && root.enabled ? #2b3040 : (touch.has-hover && root.enabled ? #1b1e26 : transparent);
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 14px;
+        cross-axis-alignment: center;
+        if root.icon != "": Icon {
+            name: root.icon;
+            tint: root.enabled ? #9299aa : #666b79;
+            width: 20px;
+            height: 20px;
+        }
+        VerticalLayout {
+            spacing: 3px;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            alignment: center;
+            cross-axis-alignment: start;
+            Text {
+                text: root.label;
+                color: #d8d9e3;
+                font-size: 13px;
+            }
+            if root.description != "": Text {
+                text: root.description;
+                color: #818899;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+        SwitchVisual {
+            checked: root.checked;
+            enabled: root.enabled;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.toggled(); }
+    }
+}
+
+component SegmentButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 32px;
+    width: 76px;
+    opacity: root.enabled ? 1.0 : 0.43;
+    border-radius: 9px;
+    background: root.selected ? (touch.pressed ? #48456e : #3b3b5a) : (touch.pressed && root.enabled ? #353a49 : (touch.has-hover && root.enabled ? #292d37 : transparent));
+    border-width: root.selected ? 1px : 0px;
+    border-color: #696598;
+
+    Text {
+        text: root.label;
+        color: root.selected ? #e9e7ff : #aeb2bf;
+        font-size: 12px;
+        font-weight: root.selected ? 650 : 450;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SectionTabs inherits Rectangle {
+    in property <string> active-tab;
+    callback select-tab(string);
+
+    height: 34px;
+    HorizontalLayout {
+        spacing: 2px;
+        SegmentButton {
+            label: "Installed";
+            selected: root.active-tab == "Installed";
+            enabled: true;
+            clicked => { root.select-tab("Installed"); }
+        }
+        SegmentButton {
+            label: "Available";
+            selected: root.active-tab == "Available";
+            enabled: true;
+            clicked => { root.select-tab("Available"); }
+        }
+    }
+}
+
+component ColorOption inherits Rectangle {
+    in property <color> swatch;
+    in property <bool> selected;
+    callback clicked();
+
+    width: 25px;
+    height: 25px;
+    border-radius: 13px;
+    background: root.swatch;
+    opacity: touch.pressed ? 0.75 : 1.0;
+    border-width: root.selected ? 3px : 1px;
+    border-color: root.selected ? #f0efff : #4b4f5d;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component AreaPreview inherits Rectangle {
+    in property <bool> has-data;
+
+    min-width: 340px;
+    height: 292px;
+    border-radius: 14px;
+    background: #171a22;
+    border-width: 1px;
+    border-color: #2d3240;
+
+    Rectangle {
+        x: 30px;
+        y: 30px;
+        width: parent.width - 60px;
+        height: parent.height - 60px;
+        border-radius: 10px;
+        background: #202531;
+        border-width: 1px;
+        border-color: #42495b;
+
+        Text {
+            text: "TABLET AREA";
+            x: 14px;
+            y: 12px;
+            color: #727a8f;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        if root.has-data: Rectangle {
+            x: 55px;
+            y: 48px;
+            width: parent.width - 110px;
+            height: parent.height - 96px;
+            border-radius: 7px;
+            background: #2d3150;
+            border-width: 2px;
+            border-color: #b9b5ff;
+            Text {
+                text: "ACTIVE AREA";
+                color: #c9c5ff;
+                font-size: 10px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+        if !root.has-data: Text {
+            text: "Area data unavailable";
+            color: #858c9f;
+            font-size: 12px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+
+    Text {
+        text: root.has-data ? "Drag & resize" : "Not available yet";
+        color: #737b8f;
+        font-size: 11px;
+        horizontal-alignment: center;
+        x: 0px;
+        y: parent.height - 23px;
+        width: parent.width;
+    }
+}
+
+component AreaEditor inherits Rectangle {
+    in property <string> device-name;
+    in property <bool> has-data;
+    in property <string> area-width;
+    in property <string> area-height;
+    in property <string> area-x;
+    in property <string> area-y;
+    in property <string> area-rotation;
+    callback retry-detection();
+
+    background: #111318;
+
+    VerticalLayout {
+        padding-left: 34px;
+        padding-right: 34px;
+        padding-top: 27px;
+        padding-bottom: 27px;
+        spacing: 17px;
+
+        PageHeader {
+            icon: "area";
+            title: "Area";
+            subtitle: root.device-name;
+        }
+
+        HorizontalLayout {
+            spacing: 20px;
+            vertical-stretch: 1;
+
+            AreaPreview {
+                has-data: root.has-data;
+                horizontal-stretch: 3;
+            }
+
+            Rectangle {
+                horizontal-stretch: 2;
+                VerticalLayout {
+                    spacing: 3px;
+                    SectionHeader {
+                        icon: "area";
+                        title: "Active area";
+                        hint: root.has-data ? "" : "Not available yet";
+                    }
+                    ValueRow { icon: "width"; label: "Width"; value: root.has-data ? root.area-width : "—"; enabled: root.has-data; }
+                    Divider {}
+                    ValueRow { icon: "height"; label: "Height"; value: root.has-data ? root.area-height : "—"; enabled: root.has-data; }
+                    Divider {}
+                    ValueRow { icon: "x"; label: "X"; value: root.has-data ? root.area-x : "—"; enabled: root.has-data; }
+                    Divider {}
+                    ValueRow { icon: "y"; label: "Y"; value: root.has-data ? root.area-y : "—"; enabled: root.has-data; }
+                    Divider {}
+                    ValueRow { icon: "rotation"; label: "Rotation"; value: root.has-data ? root.area-rotation : "—"; enabled: root.has-data; }
+                    Divider {}
+                    SwitchRow {
+                        icon: "lock";
+                        label: "Lock aspect ratio";
+                        description: "Keep width and height proportional";
+                        checked: false;
+                        enabled: root.has-data;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        AppButton { label: "Center"; primary: false; enabled: root.has-data; }
+                        AppButton { label: "Full area"; primary: false; enabled: root.has-data; }
+                        AppButton { label: "Apply"; primary: true; enabled: root.has-data; }
+                    }
+                    if !root.has-data: AvailabilityHint {}
+                    Rectangle { vertical-stretch: 1; }
+                    AppButton {
+                        label: "Retry detection";
+                        primary: false;
+                        enabled: true;
+                        clicked => { root.retry-detection(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component AreaPage inherits Rectangle {
+    in property <string> backend-state;
+    in property <string> device-name;
+    in property <string> area-width;
+    in property <string> area-height;
+    in property <string> area-x;
+    in property <string> area-y;
+    in property <string> area-rotation;
+    callback retry-detection();
+
+    if root.backend-state == "ready" && root.device-name != "": AreaEditor {
+        device-name: root.device-name;
+        has-data: root.area-width != "" && root.area-height != "";
+        area-width: root.area-width;
+        area-height: root.area-height;
+        area-x: root.area-x;
+        area-y: root.area-y;
+        area-rotation: root.area-rotation;
+        retry-detection => { root.retry-detection(); }
+    }
+    if root.backend-state != "ready" || root.device-name == "": EmptyState {
+        heading: "Area";
+        message: root.backend-state == "daemon-not-running" ? "OpenTabletDriver is not running" : (root.backend-state == "daemon-starting" ? "Starting OpenTabletDriver" : (root.backend-state == "daemon-running" ? "Waiting for tablet detection" : (root.backend-state == "unknown" ? "Waiting for tablet detection" : "No tablet connected")));
+        detail: root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver to detect a tablet." : (root.backend-state == "daemon-starting" ? "Retry in a moment." : "Connect a tablet to configure its active area.");
+        primary-label: "";
+        secondary-label: "Retry detection";
+        secondary-clicked => { root.retry-detection(); }
+    }
+}
+
+component PressureCurvePreview inherits Rectangle {
+    in property <bool> enabled;
+
+    height: 142px;
+    border-radius: 12px;
+    background: #171a22;
+    border-width: 1px;
+    border-color: #2d3240;
+    opacity: root.enabled ? 1.0 : 0.55;
+
+    Text {
+        text: root.enabled ? "Pressure curve" : "Not available yet";
+        color: root.enabled ? #aeb2c1 : #888fa1;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+component PressureTestArea inherits Rectangle {
+    in property <bool> enabled;
+
+    height: 90px;
+    border-radius: 12px;
+    background: #171a22;
+    border-width: 1px;
+    border-color: #2d3240;
+    opacity: root.enabled ? 1.0 : 0.55;
+    Text {
+        text: root.enabled ? "Test pressure here" : "Not available yet";
+        color: root.enabled ? #aeb2c1 : #888fa1;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+component PenEditor inherits Rectangle {
+    in property <string> device-name;
+    in property <bool> enabled;
+    callback retry-detection();
+
+    background: #111318;
+    VerticalLayout {
+        padding-left: 34px;
+        padding-right: 34px;
+        padding-top: 27px;
+        padding-bottom: 27px;
+        spacing: 17px;
+
+        PageHeader { icon: "pen"; title: "Pen"; subtitle: root.device-name; }
+
+        HorizontalLayout {
+            spacing: 20px;
+            vertical-stretch: 1;
+            Rectangle {
+                horizontal-stretch: 3;
+                VerticalLayout {
+                    spacing: 3px;
+                    SectionHeader { icon: "test"; title: "Pressure curve"; hint: root.enabled ? "" : "Not available yet"; }
+                    PressureCurvePreview { enabled: root.enabled; }
+                    SectionHeader { icon: "test"; title: "Test pressure area"; hint: ""; }
+                    PressureTestArea { enabled: root.enabled; }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 2;
+                VerticalLayout {
+                    spacing: 3px;
+                    SectionHeader { icon: "sensitivity"; title: "Sensitivity"; hint: root.enabled ? "" : "Not available yet"; }
+                    ValueRow { icon: "sensitivity"; label: "Tip sensitivity"; value: root.enabled ? "—" : "—"; enabled: root.enabled; }
+                    Divider {}
+                    SwitchRow {
+                        icon: "disable-pressure";
+                        label: "Disable pressure";
+                        description: "Use a constant stroke width";
+                        checked: false;
+                        enabled: root.enabled;
+                    }
+                    Rectangle { height: 11px; }
+                    SectionHeader { icon: "buttons"; title: "Pen button bindings"; hint: ""; }
+                    ValueRow { icon: "button1"; label: "Button 1"; value: "—"; enabled: root.enabled; }
+                    Divider {}
+                    ValueRow { icon: "button2"; label: "Button 2"; value: "—"; enabled: root.enabled; }
+                    if !root.enabled: AvailabilityHint {}
+                    Rectangle { vertical-stretch: 1; }
+                    AppButton {
+                        label: "Retry detection";
+                        primary: false;
+                        enabled: true;
+                        clicked => { root.retry-detection(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component PenPage inherits Rectangle {
+    in property <string> backend-state;
+    in property <string> device-name;
+    in property <bool> pen-data-available;
+    callback retry-detection();
+
+    if root.backend-state == "ready" && root.device-name != "": PenEditor {
+        device-name: root.device-name;
+        enabled: root.pen-data-available;
+        retry-detection => { root.retry-detection(); }
+    }
+    if root.backend-state != "ready" || root.device-name == "": EmptyState {
+        heading: "Pen";
+        message: root.backend-state == "daemon-not-running" ? "OpenTabletDriver is not running" : (root.backend-state == "daemon-starting" ? "Starting OpenTabletDriver" : (root.backend-state == "daemon-running" ? "Waiting for tablet detection" : (root.backend-state == "unknown" ? "Waiting for tablet detection" : "No tablet connected")));
+        detail: root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver to detect a tablet." : (root.backend-state == "daemon-starting" ? "Retry in a moment." : "Connect a tablet to configure the pen.");
+        primary-label: "";
+        secondary-label: "Retry detection";
+        secondary-clicked => { root.retry-detection(); }
+    }
+}
+
+component PluginsPage inherits Rectangle {
+    property <string> active-tab: "Installed";
+
+    background: #111318;
+    VerticalLayout {
+        padding-left: 34px;
+        padding-right: 34px;
+        padding-top: 27px;
+        padding-bottom: 27px;
+        spacing: 17px;
+
+        PageHeader { icon: "plugins"; title: "Plugins"; subtitle: "OpenTabletDriver plugins"; }
+        SectionTabs {
+            active-tab: root.active-tab;
+            select-tab(tab) => { root.active-tab = tab; }
+        }
+        Divider {}
+        Rectangle { vertical-stretch: 1; }
+        VerticalLayout {
+            alignment: center;
+            cross-axis-alignment: center;
+            spacing: 9px;
+            Text {
+                text: "Plugin integration is not available yet.";
+                color: #d6d7e1;
+                font-size: 14px;
+                horizontal-alignment: center;
+            }
+            AvailabilityHint {}
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component ProfileRow inherits Rectangle {
+    in property <string> name;
+    in property <bool> enabled;
+    height: 52px;
+    opacity: root.enabled ? 1.0 : 0.43;
+    border-radius: 10px;
+    background: #1a1d25;
+    border-width: 1px;
+    border-color: #292e39;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        Text {
+            text: root.name;
+            color: #dfe0e9;
+            font-size: 13px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        AvailabilityHint {}
+    }
+}
+
+component ProfilesPage inherits Rectangle {
+    background: #111318;
+    VerticalLayout {
+        padding-left: 34px;
+        padding-right: 34px;
+        padding-top: 27px;
+        padding-bottom: 27px;
+        spacing: 15px;
+
+        PageHeader { icon: "profiles"; title: "Profiles"; subtitle: "Configuration profiles"; }
+        SectionHeader { icon: "profiles"; title: "Profiles"; hint: "Not available yet"; }
+        ProfileRow { name: "Default profile"; enabled: false; }
+        HorizontalLayout {
+            spacing: 8px;
+            AppButton { label: "New profile"; primary: true; enabled: false; }
+            AppButton { label: "Rename"; primary: false; enabled: false; }
+            AppButton { label: "Duplicate"; primary: false; enabled: false; }
+            AppButton { label: "Delete"; primary: false; enabled: false; }
+        }
+        Divider {}
+        SwitchRow {
+            icon: "profiles";
+            label: "Auto-switch profile";
+            description: "Switch profiles based on the active application";
+            checked: false;
+            enabled: false;
+        }
+        AvailabilityHint {}
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component SettingsPage inherits Rectangle {
+    in property <string> backend-state;
+    in-out property <string> theme: "System";
+    in-out property <string> accent: "Lavender";
+    in-out property <bool> compact-ui: false;
+    in-out property <bool> reduce-animations: false;
+    in-out property <bool> start-with-system: false;
+    in-out property <bool> start-minimized: false;
+    in-out property <bool> minimize-to-tray: false;
+    in-out property <bool> close-to-tray: false;
+    in-out property <bool> check-updates: true;
+    in-out property <bool> pause-hidden: true;
+    in-out property <bool> disable-unfocused-animations: false;
+    in-out property <string> polling-interval: "Auto";
+    in-out property <bool> low-power-mode: false;
+    in-out property <bool> show-diagnostics: false;
+
+    background: #111318;
+
+    ScrollView {
+        width: parent.width;
+        height: parent.height;
+        viewport-width: parent.width;
+        viewport-height: 1290px;
+
+        HorizontalLayout {
+            width: parent.width;
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                width: parent.width < 760px ? parent.width : 760px;
+                padding-left: 28px;
+                padding-right: 28px;
+                padding-top: 27px;
+                padding-bottom: 30px;
+                spacing: 2px;
+
+            PageHeader { icon: "settings"; title: "Settings"; subtitle: "TabletFlow"; }
+
+            Rectangle { height: 13px; }
+            SectionHeader { icon: "theme"; title: "Appearance"; hint: ""; }
+            HorizontalLayout {
+                height: 49px;
+                padding-left: 12px;
+                padding-right: 12px;
+                cross-axis-alignment: center;
+                Icon { name: "theme"; tint: #9299aa; width: 20px; height: 20px; }
+                Text { text: "Theme"; color: #d8d9e3; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
+                SegmentButton { label: "System"; selected: root.theme == "System"; clicked => { root.theme = "System"; } }
+                SegmentButton { label: "Light"; selected: root.theme == "Light"; clicked => { root.theme = "Light"; } }
+                SegmentButton { label: "Dark"; selected: root.theme == "Dark"; clicked => { root.theme = "Dark"; } }
+            }
+            HorizontalLayout {
+                height: 49px;
+                padding-left: 12px;
+                padding-right: 12px;
+                cross-axis-alignment: center;
+                Icon { name: "accent"; tint: #9299aa; width: 20px; height: 20px; }
+                Text { text: "Accent color"; color: #d8d9e3; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
+                ColorOption { swatch: #c9c5ff; selected: root.accent == "Lavender"; clicked => { root.accent = "Lavender"; } }
+                ColorOption { swatch: #9cc9ff; selected: root.accent == "Blue"; clicked => { root.accent = "Blue"; } }
+                ColorOption { swatch: #9ad5bd; selected: root.accent == "Mint"; clicked => { root.accent = "Mint"; } }
+            }
+            Divider {}
+            SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing throughout TabletFlow"; checked: root.compact-ui; toggled => { root.compact-ui = !root.compact-ui; } }
+            SwitchRow { icon: "reduce"; label: "Reduce animations"; description: "Prefer instant transitions"; checked: root.reduce-animations; toggled => { root.reduce-animations = !root.reduce-animations; } }
+
+            Rectangle { height: 17px; }
+            SectionHeader { icon: "general"; title: "General"; hint: ""; }
+            SwitchRow { icon: "startup"; label: "Start with system"; checked: root.start-with-system; toggled => { root.start-with-system = !root.start-with-system; } }
+            SwitchRow { icon: "minimized"; label: "Start minimized"; checked: root.start-minimized; toggled => { root.start-minimized = !root.start-minimized; } }
+            SwitchRow { icon: "tray"; label: "Minimize to tray"; checked: root.minimize-to-tray; toggled => { root.minimize-to-tray = !root.minimize-to-tray; } }
+            SwitchRow { icon: "close"; label: "Close to tray"; checked: root.close-to-tray; toggled => { root.close-to-tray = !root.close-to-tray; } }
+            SwitchRow { icon: "updates"; label: "Check for updates"; checked: root.check-updates; toggled => { root.check-updates = !root.check-updates; } }
+
+            Rectangle { height: 17px; }
+            SectionHeader { icon: "plugins"; title: "OpenTabletDriver"; hint: "Not available yet"; }
+            ValueRow { icon: "daemon"; label: "Daemon path"; value: "Not configured"; enabled: false; }
+            Divider {}
+            SwitchRow { icon: "detect"; label: "Auto-detect daemon"; checked: false; enabled: false; }
+            SwitchRow { icon: "start-daemon"; label: "Start daemon with TabletFlow"; checked: false; enabled: false; }
+            ValueRow { icon: "restart"; label: "Restart daemon"; value: "Not available yet"; enabled: false; }
+            ValueRow {
+                icon: "connection";
+                label: "Connection status";
+                value: root.backend-state == "unknown" ? "—" : (root.backend-state == "daemon-not-running" ? "Not running" : (root.backend-state == "daemon-starting" ? "Starting" : (root.backend-state == "daemon-running" ? "Waiting for tablet" : (root.backend-state == "no-tablet" ? "No tablet" : "Connected"))));
+                enabled: false;
+            }
+
+            Rectangle { height: 17px; }
+            SectionHeader { icon: "performance"; title: "Performance"; hint: ""; }
+            SwitchRow { icon: "pause"; label: "Pause UI updates when hidden"; checked: root.pause-hidden; toggled => { root.pause-hidden = !root.pause-hidden; } }
+            SwitchRow { icon: "focus"; label: "Disable animations when unfocused"; checked: root.disable-unfocused-animations; toggled => { root.disable-unfocused-animations = !root.disable-unfocused-animations; } }
+            HorizontalLayout {
+                height: 49px;
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 12px;
+                cross-axis-alignment: center;
+                Icon { name: "polling"; tint: #9299aa; width: 20px; height: 20px; }
+                Text { text: "Background polling interval"; color: #d8d9e3; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
+                SegmentButton { label: "Auto"; selected: root.polling-interval == "Auto"; clicked => { root.polling-interval = "Auto"; } }
+                SegmentButton { label: "Low"; selected: root.polling-interval == "Low"; clicked => { root.polling-interval = "Low"; } }
+                SegmentButton { label: "High"; selected: root.polling-interval == "High"; clicked => { root.polling-interval = "High"; } }
+            }
+            SwitchRow { icon: "power"; label: "Low power mode"; checked: root.low-power-mode; toggled => { root.low-power-mode = !root.low-power-mode; } }
+
+            Rectangle { height: 17px; }
+            SectionHeader { icon: "advanced"; title: "Advanced"; hint: ""; }
+            SwitchRow { icon: "diagnostics"; label: "Show diagnostics"; checked: root.show-diagnostics; toggled => { root.show-diagnostics = !root.show-diagnostics; } }
+            ValueRow { icon: "config"; label: "Open config directory"; value: "Not available yet"; enabled: false; }
+            ValueRow {
+                icon: "reset";
+                label: "Reset TabletFlow settings";
+                value: "Reset";
+                enabled: true;
+                interactive: true;
+                show-chevron: true;
+                clicked => {
+                    root.theme = "System";
+                    root.accent = "Lavender";
+                    root.compact-ui = false;
+                    root.reduce-animations = false;
+                    root.start-with-system = false;
+                    root.start-minimized = false;
+                    root.minimize-to-tray = false;
+                    root.close-to-tray = false;
+                    root.check-updates = true;
+                    root.pause-hidden = true;
+                    root.disable-unfocused-animations = false;
+                    root.polling-interval = "Auto";
+                    root.low-power-mode = false;
+                    root.show-diagnostics = false;
+                }
+            }
+
+            Rectangle { height: 20px; }
+            Divider {}
+                HorizontalLayout {
+                    height: 38px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    Text { text: "TabletFlow 0.1.0"; color: #7e8597; font-size: 11px; horizontal-stretch: 1; vertical-alignment: center; }
+                    Text { text: "OpenTabletDriver —"; color: #7e8597; font-size: 11px; vertical-alignment: center; }
+                    Text { text: "GitHub"; color: #aaa5e5; font-size: 11px; vertical-alignment: center; }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+}
+
+component SectionPage inherits Rectangle {
+    in property <string> page-title;
+    in property <string> message;
+
+    background: #111318;
+    VerticalLayout {
+        padding-left: 34px;
+        padding-right: 34px;
+        padding-top: 27px;
+        padding-bottom: 27px;
+        spacing: 12px;
+        PageHeader { icon: root.page-title == "Bindings" ? "buttons" : ""; title: root.page-title; subtitle: ""; }
+        if root.message != "": Text {
+            text: root.message;
+            color: #9298aa;
+            font-size: 13px;
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+// Backend state contract: "unknown", "daemon-not-running", "no-tablet", "ready".
+// The default stays unknown until real IPC data is provided by the backend.
+export component MainWindow inherits Window {
+    title: "TabletFlow";
+    preferred-width: 960px;
+    preferred-height: 620px;
+    min-width: 760px;
+    min-height: 500px;
+
+    in-out property <string> active-page: "Overview";
+    in-out property <string> backend-state: "unknown";
+    in-out property <string> device-name: "";
+    in-out property <string> active-profile: "";
+    in-out property <string> area-width: "";
+    in-out property <string> area-height: "";
+    in-out property <string> area-x: "";
+    in-out property <string> area-y: "";
+    in-out property <string> area-rotation: "";
+    in-out property <bool> pen-data-available: false;
+    in-out property <string> theme: "System";
+    in-out property <string> accent: "Lavender";
+    in-out property <bool> compact-ui: false;
+    in-out property <bool> reduce-animations: false;
+    in-out property <bool> start-with-system: false;
+    in-out property <bool> start-minimized: false;
+    in-out property <bool> minimize-to-tray: false;
+    in-out property <bool> close-to-tray: false;
+    in-out property <bool> check-updates: true;
+    in-out property <bool> pause-hidden: true;
+    in-out property <bool> disable-unfocused-animations: false;
+    in-out property <string> polling-interval: "Auto";
+    in-out property <bool> low-power-mode: false;
+    in-out property <bool> show-diagnostics: false;
+
+    callback navigate(string);
+    callback start-daemon();
+    callback retry-backend();
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #111318;
+
+        HorizontalLayout {
+            spacing: 0px;
+            Sidebar {
+                active-page: root.active-page;
+                navigate(page) => { root.navigate(page); }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                background: #111318;
+
+                if root.active-page == "Overview" && root.backend-state == "daemon-not-running": EmptyState {
+                    heading: "TabletFlow";
+                    message: "OpenTabletDriver is not running";
+                    detail: "";
+                    primary-label: "Start daemon";
+                    secondary-label: "Retry";
+                    primary-clicked => { root.start-daemon(); }
+                    secondary-clicked => { root.retry-backend(); }
+                }
+                if root.active-page == "Overview" && root.backend-state == "no-tablet": EmptyState {
+                    heading: "TabletFlow";
+                    message: "No tablet detected";
+                    detail: "Connect a supported tablet.";
+                    primary-label: "";
+                    secondary-label: "Retry";
+                    secondary-clicked => { root.retry-backend(); }
+                }
+                if root.active-page == "Overview" && root.backend-state == "daemon-starting": EmptyState {
+                    heading: "TabletFlow";
+                    message: "Starting OpenTabletDriver";
+                    detail: "Retry in a moment.";
+                    primary-label: "";
+                    secondary-label: "Retry";
+                    secondary-clicked => { root.retry-backend(); }
+                }
+                if root.active-page == "Overview" && root.backend-state == "ready" && root.device-name != "": DeviceOverview {
+                    device-name: root.device-name;
+                    active-profile: root.active-profile;
+                    configure-area => { root.navigate("Area"); }
+                    open-pen => { root.navigate("Pen"); }
+                    open-bindings => { root.navigate("Bindings"); }
+                }
+                if root.active-page == "Overview"
+                    && (root.backend-state == "unknown"
+                        || root.backend-state == "daemon-running"
+                        || (root.backend-state == "ready" && root.device-name == "")): EmptyState {
+                    heading: "TabletFlow";
+                    message: root.backend-state == "daemon-running" ? "Waiting for tablet detection" : "Waiting for OpenTabletDriver";
+                    detail: root.backend-state == "daemon-running" ? "Connect a supported tablet." : "Connect OpenTabletDriver to continue.";
+                    primary-label: "";
+                    secondary-label: "Retry";
+                    secondary-clicked => { root.retry-backend(); }
+                }
+
+                if root.active-page == "Area": AreaPage {
+                    backend-state: root.backend-state;
+                    device-name: root.device-name;
+                    area-width: root.area-width;
+                    area-height: root.area-height;
+                    area-x: root.area-x;
+                    area-y: root.area-y;
+                    area-rotation: root.area-rotation;
+                    retry-detection => { root.retry-backend(); }
+                }
+                if root.active-page == "Pen": PenPage {
+                    backend-state: root.backend-state;
+                    device-name: root.device-name;
+                    pen-data-available: root.pen-data-available;
+                    retry-detection => { root.retry-backend(); }
+                }
+                if root.active-page == "Plugins": PluginsPage {}
+                if root.active-page == "Profiles": ProfilesPage {}
+                if root.active-page == "Settings": SettingsPage {
+                    backend-state: root.backend-state;
+                    theme <=> root.theme;
+                    accent <=> root.accent;
+                    compact-ui <=> root.compact-ui;
+                    reduce-animations <=> root.reduce-animations;
+                    start-with-system <=> root.start-with-system;
+                    start-minimized <=> root.start-minimized;
+                    minimize-to-tray <=> root.minimize-to-tray;
+                    close-to-tray <=> root.close-to-tray;
+                    check-updates <=> root.check-updates;
+                    pause-hidden <=> root.pause-hidden;
+                    disable-unfocused-animations <=> root.disable-unfocused-animations;
+                    polling-interval <=> root.polling-interval;
+                    low-power-mode <=> root.low-power-mode;
+                    show-diagnostics <=> root.show-diagnostics;
+                }
+                if root.active-page == "Bindings": SectionPage {
+                    page-title: "Bindings";
+                    message: root.backend-state == "unknown" ? "" : (root.backend-state == "daemon-not-running" ? "OpenTabletDriver is not running" : (root.backend-state == "daemon-running" ? "Waiting for tablet detection" : (root.backend-state == "no-tablet" ? "Connect a tablet to continue." : "")));
+                }
+            }
+        }
+    }
+}
