@@ -7,6 +7,7 @@ DAEMON_PATH="${OTD_DAEMON_PATH:-}"
 TABLETFLOW_BINARY_PATH="${TABLETFLOW_BINARY_PATH:-$ROOT_DIR/target/release/tabletflow}"
 VERSION="${TABLETFLOW_VERSION:-0.1.0}"
 ARCH="${TABLETFLOW_ARCH:-$(uname -m)}"
+SIGNING_IDENTITY="${MACOS_SIGNING_IDENTITY:-}"
 
 if [[ ! -f "$TABLETFLOW_BINARY_PATH" ]]; then
     echo "TABLETFLOW_BINARY_PATH must point to the TabletFlow executable" >&2
@@ -27,10 +28,25 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" "$STAGING_DIR"
 cp "$TABLETFLOW_BINARY_PATH" "$APP_DIR/Contents/MacOS/TabletFlow"
 cp "$DAEMON_PATH" "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
 cp "$ROOT_DIR/packaging/macos/Info.plist" "$APP_DIR/Contents/Info.plist"
+if [[ "$VERSION" != "0.1.0" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_DIR/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_DIR/Contents/Info.plist"
+fi
 if [[ -n "${OTD_LICENSE_PATH:-}" && -f "$OTD_LICENSE_PATH" ]]; then
     cp "$OTD_LICENSE_PATH" "$APP_DIR/Contents/Resources/OpenTabletDriver.LICENSE"
 fi
 chmod +x "$APP_DIR/Contents/MacOS/TabletFlow" "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
+
+if [[ -n "$SIGNING_IDENTITY" ]]; then
+    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" \
+        "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
+    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" \
+        "$APP_DIR/Contents/MacOS/TabletFlow"
+    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP_DIR"
+    codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+else
+    echo "Warning: MACOS_SIGNING_IDENTITY is not set; this DMG is for local testing only." >&2
+fi
 
 ln -s /Applications "$STAGING_DIR/Applications"
 cp -R "$APP_DIR" "$STAGING_DIR/TabletFlow.app"

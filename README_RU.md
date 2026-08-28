@@ -120,6 +120,30 @@ TabletFlow отвечает за **современный, красивый и �
 
 Поддержка конкретных планшетов в первую очередь зависит от **OpenTabletDriver**.
 
+##  Установка macOS ARM64
+
+У TabletFlow есть нативная **ARM64**-сборка для Mac с Apple Silicon (M1, M2, M3 и M4).
+
+1. Скачайте `TabletFlow-<version>-macos-arm64.dmg` из GitHub Release.
+2. Откройте DMG и перетащите `TabletFlow.app` в папку `Applications`.
+3. Откройте Terminal и снимите quarantine с загруженного приложения:
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/TabletFlow.app"
+   ```
+
+4. Запустите TabletFlow из Applications или командой:
+
+   ```bash
+   open "/Applications/TabletFlow.app"
+   ```
+
+OpenTabletDriver daemon уже находится внутри приложения и запускается вместе с TabletFlow.
+
+Если macOS пишет, что TabletFlow повреждён, это означает блокировку Gatekeeper, а не повреждение файла. Повторите команду `xattr`, затем нажмите правой кнопкой по `TabletFlow.app` в Applications и выберите **Open**.
+
+Текущая ARM64-сборка распространяется без Apple Developer-подписи, поэтому такое одноразовое разрешение ожидаемо. Если macOS запросит разрешения для планшета, выдайте их в разделе **Системные настройки → Конфиденциальность и безопасность**.
+
 ## 🔧 Разработка
 
 Первый прототип использует Rust и Slint. Интерфейс компилируется в нативный бинарник — без WebView и JavaScript runtime.

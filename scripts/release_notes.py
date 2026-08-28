@@ -17,7 +17,7 @@ def command(*args: str) -> str:
 
 def release_context() -> tuple[str, str, str]:
     sha = os.environ.get("GITHUB_SHA") or command("git", "rev-parse", "HEAD")
-    tag = os.environ.get("GITHUB_REF_NAME", "")
+    tag = os.environ.get("RELEASE_TAG") or os.environ.get("GITHUB_REF_NAME", "")
     try:
         previous = command("git", "describe", "--tags", "--abbrev=0", f"{sha}^")
     except subprocess.CalledProcessError:
@@ -42,27 +42,56 @@ def provider_endpoint() -> str:
     return f"{provider}/v1/messages"
 
 
+def normalize_notes(text: str) -> str:
+    """Keep the release body in a scannable heading-and-bullets format."""
+    lines = []
+    for line in text.replace("```markdown", "").replace("```", "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        if stripped.startswith("#") or stripped.startswith(("- ", "* ", "+ ")):
+            lines.append(stripped)
+        else:
+            lines.append(f"- {stripped}")
+
+    while lines and lines[-1] == "":
+        lines.pop()
+    if not any(line.startswith("## ") for line in lines):
+        lines.insert(0, "## Что изменилось")
+    return "\n".join(lines)
+
+
 def generate_notes(tag: str, commits: str, diff: str) -> str:
     payload = {
         "model": os.environ["AI_MODEL"],
         "max_tokens": 1200,
         "temperature": 0.2,
-        "system": "You write accurate, polished GitHub release notes for an open-source desktop application.",
+        "system": "You write concise, accurate GitHub release notes in Russian for an open-source desktop application. Your output must be a useful change list for users, not a commit report.",
         "messages": [
             {
                 "role": "user",
-                "content": f"""Write the release description for {tag or 'this release'}.
+                "content": f"""Prepare the GitHub Release description for {tag or 'this release'}.
 
 Return only Markdown suitable for the body of a GitHub Release. Do not use a code fence.
-Make it feel like a real open-source project release announcement:
-- Start with one short, human introduction paragraph.
-- Add concise sections such as ## Highlights, ## Notable changes, ## Bug fixes, or ## Notes.
-- Use bullets where they improve scanning.
-- Mention only changes supported by the commit list and diff.
-- Do not invent features, bug fixes, compatibility, benchmarks, contributors, issue numbers, or links.
+The result must be a human-readable list of concrete changes:
+- Start immediately with a section heading: ## Что изменилось
+- Use 3–8 concise bullet points. Each bullet describes one real, specific change and why it matters to a user.
+- Group bullets under short headings such as ## Что нового, ## Исправления, and ## Технические изменения when useful.
+- Do not write a generic introduction paragraph, a daily summary, or phrases like "сегодня", "эта версия в первую очередь", or "по коммитам".
+- Do not repeat the release number in every bullet.
+- Mention only changes directly supported by the commit list or diff. Never invent features, bug fixes, compatibility, benchmarks, contributors, issue numbers, or links.
+- Prefer user-facing wording. Mention CI, packaging, or internal refactoring only when it changes what users can download or use.
 - Do not list downloadable assets; GitHub displays those separately.
-- Prefer user-facing language and explain why a change matters.
-- Omit empty sections.
+- Omit empty sections. Every non-heading line in the result must be a bullet point.
+
+Use this shape (adapt the headings and content, do not copy the example):
+## Что нового
+- Коротко и конкретно описано изменение и его польза.
+
+## Исправления
+- Конкретно описано исправление.
 
 Commits since the previous release:
 {commits}
@@ -100,7 +129,7 @@ Diff:
     ).strip()
     if not text:
         raise RuntimeError("AI provider returned no release notes")
-    return text.replace("```markdown", "").replace("```", "").strip()
+    return normalize_notes(text)
 
 
 def main() -> int:

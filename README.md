@@ -120,6 +120,30 @@ Planned controls include:
 
 Hardware compatibility is primarily provided by **OpenTabletDriver**.
 
+##  macOS ARM64 installation
+
+TabletFlow has a native **ARM64** build for Apple Silicon Macs (M1, M2, M3 and M4).
+
+1. Download `TabletFlow-<version>-macos-arm64.dmg` from the GitHub release.
+2. Open the DMG and drag `TabletFlow.app` to `Applications`.
+3. Open Terminal and remove the download quarantine:
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/TabletFlow.app"
+   ```
+
+4. Start TabletFlow from Applications or with:
+
+   ```bash
+   open "/Applications/TabletFlow.app"
+   ```
+
+The OpenTabletDriver daemon is bundled inside the application and starts with TabletFlow.
+
+If macOS says that TabletFlow is damaged, the application is blocked by Gatekeeper rather than actually corrupted. Repeat the `xattr` command, then right-click `TabletFlow.app` in Applications and choose **Open**.
+
+The current ARM64 build is distributed without an Apple Developer signature, so this one-time approval is expected. If macOS requests tablet permissions, grant them in **System Settings → Privacy & Security**.
+
 ## 🔧 Development
 
 The first prototype uses Rust and Slint. The UI is compiled into the native binary, with no WebView or JavaScript runtime.
