@@ -1,10 +1,36 @@
-import { ScrollView } from "std-widgets.slint";
+import { ScrollView, Palette } from "std-widgets.slint";
+
+export global AppTheme {
+    in-out property <string> mode: "system";
+    in-out property <string> accent: "Blue";
+    in-out property <bool> compact: false;
+    in-out property <bool> reduce-motion: false;
+
+    out property <bool> light: mode == "light" || (mode == "system" && Palette.color-scheme == ColorScheme.light);
+    out property <color> canvas: light ? #f5f7fa : #111418;
+    out property <color> sidebar: light ? #edf1f5 : #171b20;
+    out property <color> surface: light ? #ffffff : #181d23;
+    out property <color> surface-alt: light ? #e9eef3 : #202830;
+    out property <color> line: light ? #d6dee6 : #2a323b;
+    out property <color> text: light ? #17212b : #eef3f8;
+    out property <color> text-secondary: light ? #435260 : #dbe3eb;
+    out property <color> text-muted: light ? #667582 : #8997a6;
+    out property <color> icon: light ? #5d6c79 : #a8b1bd;
+    out property <color> accent-color: accent == "Amber" ? (light ? #8b642e : #d6aa72) : (accent == "Mint" ? (light ? #3f8066 : #9ac7b0) : (light ? #426f9e : #8fb5e6));
+    out property <color> accent-soft: accent == "Amber" ? (light ? #f1e5d2 : #3f3526) : (accent == "Mint" ? (light ? #dcefe6 : #273d36) : (light ? #dce9f7 : #27384d));
+    out property <color> accent-pressed: accent == "Amber" ? (light ? #745226 : #a47742) : (accent == "Mint" ? (light ? #326650 : #6c9f88) : (light ? #355b83 : #7398c8));
+    out property <color> accent-on: light ? #ffffff : #101820;
+
+    out property <length> row-height: compact ? 43px : 49px;
+    out property <length> nav-height: compact ? 34px : 36px;
+    out property <length> button-height: compact ? 34px : 38px;
+}
 
 // Geometry-based icons keep the UI independent from font glyph coverage.
 // They are intentionally small and quiet, but each one has a distinct silhouette.
 component Icon inherits Rectangle {
     in property <string> name;
-    in property <color> tint: #a8b1bd;
+    in property <color> tint: AppTheme.icon;
 
     width: 18px;
     height: 18px;
@@ -334,17 +360,17 @@ component AppButton inherits Rectangle {
     in property <bool> enabled: true;
     callback clicked();
 
-    height: 38px;
+    height: AppTheme.button-height;
     width: root.primary ? 132px : 104px;
     opacity: root.enabled ? (touch.pressed ? 0.88 : 1.0) : 0.42;
     border-radius: 19px;
-    background: root.primary ? (touch.pressed ? #7398c8 : #8fb5e6) : (touch.pressed ? #303842 : (touch.has-hover ? #252c35 : #1d2229));
+    background: root.primary ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-color) : (touch.pressed ? #303842 : (touch.has-hover ? #252c35 : AppTheme.surface));
     border-width: root.primary ? 0px : 1px;
-    border-color: #39434f;
+    border-color: AppTheme.line;
 
     Text {
         text: root.label;
-        color: root.primary ? #101820 : #e0e6ed;
+        color: root.primary ? AppTheme.accent-on : AppTheme.text-secondary;
         font-size: 13px;
         font-weight: 600;
         horizontal-alignment: center;
@@ -365,9 +391,9 @@ component NavItem inherits Rectangle {
     in property <bool> selected;
     callback clicked();
 
-    height: 36px;
+    height: AppTheme.nav-height;
     border-radius: 10px;
-    background: root.selected ? (touch.pressed ? #30445d : #27384d) : (touch.pressed ? #29313a : (touch.has-hover ? #20262d : transparent));
+    background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed ? #29313a : (touch.has-hover ? #20262d : transparent));
 
     HorizontalLayout {
         padding-left: 11px;
@@ -376,12 +402,12 @@ component NavItem inherits Rectangle {
         cross-axis-alignment: center;
         Icon {
             name: root.icon;
-            tint: root.selected ? #a8c9ee : (touch.pressed ? #cbd4df : #9ca8b5);
+            tint: root.selected ? AppTheme.accent-color : (touch.pressed ? #cbd4df : AppTheme.icon);
             width: 18px;
         }
         Text {
             text: root.label;
-            color: root.selected ? #edf3fa : #b8c1cc;
+            color: root.selected ? AppTheme.text : #b8c1cc;
             font-size: 13px;
             font-weight: root.selected ? 650 : 450;
             vertical-alignment: center;
@@ -399,7 +425,7 @@ component Sidebar inherits Rectangle {
     callback navigate(string);
 
     width: 196px;
-    background: #171b20;
+    background: AppTheme.sidebar;
 
     VerticalLayout {
         padding-left: 14px;
@@ -420,17 +446,17 @@ component Sidebar inherits Rectangle {
                     width: 24px;
                     height: 24px;
                     border-radius: 8px;
-                    background: #8fb5e6;
+                    background: AppTheme.accent-color;
                     Icon {
                         name: "logo";
-                        tint: #14202c;
+                        tint: AppTheme.accent-on;
                         x: 3px;
                         y: 3px;
                     }
                 }
                 Text {
                     text: "TabletFlow";
-                    color: #eef3f8;
+                    color: AppTheme.text;
                     font-size: 15px;
                     font-weight: 700;
                     vertical-alignment: center;
@@ -481,7 +507,7 @@ component Sidebar inherits Rectangle {
         x: parent.width - 1px;
         width: 1px;
         height: parent.height;
-        background: #2a323b;
+        background: AppTheme.line;
     }
 }
 
@@ -490,7 +516,7 @@ component PageHeader inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
 
-    height: 68px;
+    height: AppTheme.compact ? 62px : 68px;
     HorizontalLayout {
         spacing: 12px;
         cross-axis-alignment: center;
@@ -500,7 +526,7 @@ component PageHeader inherits Rectangle {
             background: transparent;
             Icon {
                 name: root.icon;
-                tint: #a8c9ee;
+                tint: AppTheme.accent-color;
                 x: 5px;
                 y: 5px;
             }
@@ -511,13 +537,13 @@ component PageHeader inherits Rectangle {
             alignment: center;
             Text {
                 text: root.title;
-                color: #eef3f8;
+                color: AppTheme.text;
                 font-size: 22px;
                 font-weight: 700;
             }
             if root.subtitle != "": Text {
                 text: root.subtitle;
-                color: #8e9aa8;
+                color: AppTheme.text-muted;
                 font-size: 12px;
             }
         }
@@ -539,14 +565,14 @@ component SectionHeader inherits Rectangle {
             background: transparent;
             Icon {
                 name: root.icon;
-                tint: #a8c9ee;
+                tint: AppTheme.accent-color;
                 x: 2px;
                 y: 2px;
             }
         }
         Text {
             text: root.title;
-            color: #e4eaf1;
+            color: AppTheme.text-secondary;
             font-size: 14px;
             font-weight: 650;
             vertical-alignment: center;
@@ -554,7 +580,7 @@ component SectionHeader inherits Rectangle {
         Rectangle { horizontal-stretch: 1; }
         if root.hint != "": Text {
             text: root.hint;
-            color: #8faed2;
+            color: AppTheme.accent-color;
             font-size: 11px;
             vertical-alignment: center;
         }
@@ -563,12 +589,12 @@ component SectionHeader inherits Rectangle {
 
 component Divider inherits Rectangle {
     height: 1px;
-    background: #2a323b;
+    background: AppTheme.line;
 }
 
 component AvailabilityHint inherits Text {
     text: "Not available yet";
-    color: #8faed2;
+    color: AppTheme.accent-color;
     font-size: 11px;
 }
 
@@ -583,7 +609,7 @@ component EmptyState inherits Rectangle {
     callback primary-clicked();
     callback secondary-clicked();
 
-    background: #111418;
+    background: AppTheme.canvas;
 
     VerticalLayout {
         padding-left: root.centered ? 0px : 34px;
@@ -597,10 +623,10 @@ component EmptyState inherits Rectangle {
             width: 46px;
             height: 46px;
             border-radius: 23px;
-            background: #202a35;
+            background: AppTheme.surface-alt;
             Icon {
                 name: root.icon;
-                tint: #a8c9ee;
+                tint: AppTheme.accent-color;
                 x: 14px;
                 y: 14px;
             }
@@ -608,20 +634,20 @@ component EmptyState inherits Rectangle {
 
         Text {
             text: root.heading;
-            color: #eef3f8;
+            color: AppTheme.text;
             font-size: 21px;
             font-weight: 700;
             horizontal-alignment: root.centered ? center : left;
         }
         Text {
             text: root.message;
-            color: #d7dfe8;
+            color: AppTheme.text-secondary;
             font-size: 14px;
             horizontal-alignment: root.centered ? center : left;
         }
         if root.detail != "": Text {
             text: root.detail;
-            color: #8996a5;
+            color: AppTheme.text-muted;
             font-size: 12px;
             horizontal-alignment: root.centered ? center : left;
         }
@@ -651,9 +677,9 @@ component DeviceAction inherits Rectangle {
     width: 300px;
     height: 46px;
     border-radius: 12px;
-    background: touch.pressed ? #303a46 : (touch.has-hover ? #202830 : #181d23);
+    background: touch.pressed ? AppTheme.accent-soft : (touch.has-hover ? AppTheme.surface-alt : AppTheme.surface);
     border-width: 1px;
-    border-color: #2b343e;
+    border-color: AppTheme.line;
 
     HorizontalLayout {
         padding-left: 14px;
@@ -662,20 +688,20 @@ component DeviceAction inherits Rectangle {
         cross-axis-alignment: center;
         if root.icon != "": Icon {
             name: root.icon;
-            tint: #a8c9ee;
+            tint: AppTheme.accent-color;
             width: 20px;
             height: 20px;
         }
         Text {
             text: root.label;
-            color: #e0e7ee;
+            color: AppTheme.text-secondary;
             font-size: 13px;
             horizontal-stretch: 1;
             vertical-alignment: center;
         }
         Text {
             text: ">";
-            color: #9ba7b4;
+            color: AppTheme.text-muted;
             font-size: 16px;
             vertical-alignment: center;
         }
@@ -693,7 +719,7 @@ component DeviceOverview inherits Rectangle {
     callback open-pen();
     callback open-bindings();
 
-    background: #111418;
+    background: AppTheme.canvas;
 
     VerticalLayout {
         alignment: center;
@@ -702,14 +728,14 @@ component DeviceOverview inherits Rectangle {
 
         Text {
             text: root.device-name;
-            color: #f1f0f8;
+            color: AppTheme.text;
             font-size: 24px;
             font-weight: 700;
             horizontal-alignment: center;
         }
         if root.active-profile != "": Text {
             text: "Active profile  /  " + root.active-profile;
-            color: #9298aa;
+            color: AppTheme.text-muted;
             font-size: 12px;
             horizontal-alignment: center;
         }
@@ -741,9 +767,9 @@ component ValueRow inherits Rectangle {
     in property <bool> show-chevron: false;
     callback clicked();
 
-    height: 49px;
+    height: AppTheme.row-height;
     opacity: root.enabled ? 1.0 : 0.43;
-    background: touch.pressed && root.enabled && root.interactive ? #303a46 : (touch.has-hover && root.enabled && root.interactive ? #202830 : transparent);
+    background: touch.pressed && root.enabled && root.interactive ? AppTheme.accent-soft : (touch.has-hover && root.enabled && root.interactive ? AppTheme.surface-alt : transparent);
 
     HorizontalLayout {
         padding-left: 12px;
@@ -752,26 +778,26 @@ component ValueRow inherits Rectangle {
         cross-axis-alignment: center;
         if root.icon != "": Icon {
             name: root.icon;
-            tint: root.enabled ? #a8b1bd : #687481;
+            tint: root.enabled ? AppTheme.icon : #687481;
             width: 20px;
             height: 20px;
         }
         Text {
             text: root.label;
-            color: #dbe3eb;
+            color: AppTheme.text-secondary;
             font-size: 13px;
             horizontal-stretch: 1;
             vertical-alignment: center;
         }
         if root.value != "": Text {
             text: root.value;
-            color: #94a1af;
+            color: AppTheme.text-muted;
             font-size: 12px;
             vertical-alignment: center;
         }
         if root.show-chevron && root.interactive: Text {
             text: ">";
-            color: #9ba7b4;
+            color: AppTheme.text-muted;
             font-size: 16px;
             vertical-alignment: center;
         }
@@ -790,9 +816,9 @@ component SwitchVisual inherits Rectangle {
     width: 42px;
     height: 26px;
     border-radius: 13px;
-    background: root.checked ? #52769e : #2b333c;
+    background: root.checked ? AppTheme.accent-color : #2b333c;
     border-width: 1px;
-    border-color: root.checked ? #7fa9d5 : #47525e;
+    border-color: root.checked ? AppTheme.accent-color : #47525e;
     opacity: root.enabled ? 1.0 : 0.55;
 
     Rectangle {
@@ -801,7 +827,8 @@ component SwitchVisual inherits Rectangle {
         width: 18px;
         height: 18px;
         border-radius: 9px;
-        background: root.checked ? #edf5ff : #aab4c0;
+        background: root.checked ? AppTheme.accent-on : #aab4c0;
+        animate x { duration: AppTheme.reduce-motion ? 0ms : 120ms; }
     }
 }
 
@@ -813,9 +840,9 @@ component SwitchRow inherits Rectangle {
     in property <bool> enabled: true;
     callback toggled();
 
-    height: root.description == "" ? 49px : 62px;
+    height: root.description == "" ? AppTheme.row-height : (AppTheme.compact ? 56px : 62px);
     opacity: root.enabled ? 1.0 : 0.43;
-    background: touch.pressed && root.enabled ? #303a46 : (touch.has-hover && root.enabled ? #202830 : transparent);
+    background: touch.pressed && root.enabled ? AppTheme.accent-soft : (touch.has-hover && root.enabled ? AppTheme.surface-alt : transparent);
 
     HorizontalLayout {
         padding-left: 12px;
@@ -824,7 +851,7 @@ component SwitchRow inherits Rectangle {
         cross-axis-alignment: center;
         if root.icon != "": Icon {
             name: root.icon;
-            tint: root.enabled ? #a8b1bd : #687481;
+            tint: root.enabled ? AppTheme.icon : #687481;
             width: 20px;
             height: 20px;
         }
@@ -836,12 +863,12 @@ component SwitchRow inherits Rectangle {
             cross-axis-alignment: start;
             Text {
                 text: root.label;
-                color: #dbe3eb;
+                color: AppTheme.text-secondary;
                 font-size: 13px;
             }
             if root.description != "": Text {
                 text: root.description;
-                color: #8997a6;
+                color: AppTheme.text-muted;
                 font-size: 11px;
                 wrap: word-wrap;
             }
@@ -864,17 +891,17 @@ component SegmentButton inherits Rectangle {
     in property <bool> enabled: true;
     callback clicked();
 
-    height: 32px;
+    height: AppTheme.compact ? 30px : 32px;
     width: 76px;
     opacity: root.enabled ? 1.0 : 0.43;
     border-radius: 9px;
-    background: root.selected ? (touch.pressed ? #3c6085 : #2e4a67) : (touch.pressed && root.enabled ? #303a46 : (touch.has-hover && root.enabled ? #252d35 : transparent));
+    background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed && root.enabled ? #303a46 : (touch.has-hover && root.enabled ? #252d35 : transparent));
     border-width: root.selected ? 1px : 0px;
-    border-color: #6f9cca;
+    border-color: AppTheme.accent-color;
 
     Text {
         text: root.label;
-        color: root.selected ? #eaf4ff : #b5c0cb;
+        color: root.selected ? AppTheme.text : #b5c0cb;
         font-size: 12px;
         font-weight: root.selected ? 650 : 450;
         horizontal-alignment: center;
@@ -923,7 +950,7 @@ component ColorOption inherits Rectangle {
     background: root.swatch;
     opacity: root.enabled ? (touch.pressed ? 0.75 : 1.0) : 0.42;
     border-width: root.selected ? 3px : 1px;
-    border-color: root.selected ? #eaf4ff : #4b5662;
+    border-color: root.selected ? AppTheme.accent-color : AppTheme.line;
 
     touch := TouchArea {
         enabled: root.enabled;
@@ -938,11 +965,11 @@ component LinkButton inherits Rectangle {
     width: 52px;
     height: 28px;
     border-radius: 7px;
-    background: touch.pressed ? #303a46 : (touch.has-hover ? #202830 : transparent);
+    background: touch.pressed ? AppTheme.accent-soft : (touch.has-hover ? AppTheme.surface-alt : transparent);
 
     Text {
         text: root.label;
-        color: #9fc2e8;
+        color: AppTheme.accent-color;
         font-size: 11px;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -961,9 +988,9 @@ component AreaPreview inherits Rectangle {
     min-width: 340px;
     height: 292px;
     border-radius: 14px;
-    background: #181d23;
+    background: AppTheme.surface;
     border-width: 1px;
-    border-color: #2b343e;
+    border-color: AppTheme.line;
 
     Rectangle {
         x: 30px;
@@ -971,15 +998,15 @@ component AreaPreview inherits Rectangle {
         width: parent.width - 60px;
         height: parent.height - 60px;
         border-radius: 10px;
-        background: #202830;
+        background: AppTheme.surface-alt;
         border-width: 1px;
-        border-color: #3a4652;
+        border-color: AppTheme.line;
 
         Text {
             text: "TABLET AREA";
             x: 14px;
             y: 12px;
-            color: #727a8f;
+            color: AppTheme.text-muted;
             font-size: 10px;
             font-weight: 700;
         }
@@ -989,12 +1016,12 @@ component AreaPreview inherits Rectangle {
             width: parent.width - 110px;
             height: parent.height - 96px;
             border-radius: 7px;
-            background: #29425b;
+            background: AppTheme.accent-soft;
             border-width: 2px;
-            border-color: #8fb5e6;
+            border-color: AppTheme.accent-color;
             Text {
                 text: "ACTIVE AREA";
-                color: #b9d4f2;
+                color: AppTheme.accent-color;
                 font-size: 10px;
                 font-weight: 700;
                 horizontal-alignment: center;
@@ -1005,7 +1032,7 @@ component AreaPreview inherits Rectangle {
         }
         if !root.has-data: Text {
             text: "Area data unavailable";
-            color: #858c9f;
+            color: AppTheme.text-muted;
             font-size: 12px;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -1016,7 +1043,7 @@ component AreaPreview inherits Rectangle {
 
     Text {
         text: root.has-data ? "Drag & resize" : "Not available yet";
-        color: #737b8f;
+        color: AppTheme.text-muted;
         font-size: 11px;
         horizontal-alignment: center;
         x: 0px;
@@ -1036,7 +1063,7 @@ component AreaEditor inherits Rectangle {
     property <bool> lock-aspect: false;
     callback retry-detection();
 
-    background: #111418;
+    background: AppTheme.canvas;
 
     VerticalLayout {
         padding-left: 34px;
@@ -1144,14 +1171,14 @@ component PressureCurvePreview inherits Rectangle {
 
     height: 142px;
     border-radius: 12px;
-    background: #181d23;
+    background: AppTheme.surface;
     border-width: 1px;
-    border-color: #2b343e;
+    border-color: AppTheme.line;
     opacity: root.enabled ? 1.0 : 0.55;
 
     Text {
         text: root.enabled ? "Pressure curve" : "Not available yet";
-        color: root.enabled ? #aeb2c1 : #888fa1;
+        color: root.enabled ? AppTheme.text-secondary : AppTheme.text-muted;
         font-size: 12px;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -1165,13 +1192,13 @@ component PressureTestArea inherits Rectangle {
 
     height: 90px;
     border-radius: 12px;
-    background: #181d23;
+    background: AppTheme.surface;
     border-width: 1px;
-    border-color: #2b343e;
+    border-color: AppTheme.line;
     opacity: root.enabled ? 1.0 : 0.55;
     Text {
         text: root.enabled ? "Test pressure here" : "Not available yet";
-        color: root.enabled ? #aeb2c1 : #888fa1;
+        color: root.enabled ? AppTheme.text-secondary : AppTheme.text-muted;
         font-size: 12px;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -1186,7 +1213,7 @@ component PenEditor inherits Rectangle {
     property <bool> disable-pressure: false;
     callback retry-detection();
 
-    background: #111418;
+    background: AppTheme.canvas;
     VerticalLayout {
         padding-left: 34px;
         padding-right: 34px;
@@ -1269,7 +1296,7 @@ component PenPage inherits Rectangle {
 component PluginsPage inherits Rectangle {
     property <string> active-tab: "Installed";
 
-    background: #111418;
+    background: AppTheme.canvas;
     VerticalLayout {
         padding-left: 34px;
         padding-right: 34px;
@@ -1292,12 +1319,12 @@ component PluginsPage inherits Rectangle {
                 width: 42px;
                 height: 42px;
                 border-radius: 21px;
-                background: #202a35;
-                Icon { name: "plugins"; tint: #a8c9ee; x: 12px; y: 12px; }
+                background: AppTheme.surface-alt;
+                Icon { name: "plugins"; tint: AppTheme.accent-color; x: 12px; y: 12px; }
             }
             Text {
                 text: "Plugin integration is not available yet.";
-                color: #d6d7e1;
+                color: AppTheme.text-secondary;
                 font-size: 14px;
                 horizontal-alignment: center;
             }
@@ -1308,7 +1335,7 @@ component PluginsPage inherits Rectangle {
 }
 
 component ProfilesPage inherits Rectangle {
-    background: #111418;
+    background: AppTheme.canvas;
     VerticalLayout {
         padding-left: 34px;
         padding-right: 34px;
@@ -1321,9 +1348,9 @@ component ProfilesPage inherits Rectangle {
         Rectangle {
             height: 82px;
             border-radius: 10px;
-            background: #181d23;
+            background: AppTheme.surface;
             border-width: 1px;
-            border-color: #2b343e;
+            border-color: AppTheme.line;
             VerticalLayout {
                 alignment: center;
                 padding-left: 16px;
@@ -1332,11 +1359,11 @@ component ProfilesPage inherits Rectangle {
                     width: 26px;
                     height: 26px;
                     border-radius: 13px;
-                    background: #202a35;
-                    Icon { name: "profiles"; tint: #a8c9ee; x: 4px; y: 4px; }
+                    background: AppTheme.surface-alt;
+                    Icon { name: "profiles"; tint: AppTheme.accent-color; x: 4px; y: 4px; }
                 }
-                Text { text: "No profiles available"; color: #dbe3eb; font-size: 13px; }
-                Text { text: "Profile data will appear after backend integration."; color: #8997a6; font-size: 11px; }
+                Text { text: "No profiles available"; color: AppTheme.text-secondary; font-size: 13px; }
+                Text { text: "Profile data will appear after backend integration."; color: AppTheme.text-muted; font-size: 11px; }
             }
         }
         HorizontalLayout {
@@ -1359,6 +1386,33 @@ component ProfilesPage inherits Rectangle {
     }
 }
 
+// A compact nested setting. Its height is animated so the option feels attached
+// to the parent switch instead of appearing as an unrelated new row.
+component StartupSubsetting inherits Rectangle {
+    in property <bool> expanded;
+    in-out property <bool> start-minimized;
+
+    height: root.expanded ? AppTheme.row-height : 0px;
+    opacity: root.expanded ? 1.0 : 0.0;
+    clip: true;
+    animate height { duration: AppTheme.reduce-motion ? 0ms : 180ms; }
+    animate opacity { duration: AppTheme.reduce-motion ? 0ms : 120ms; }
+
+    HorizontalLayout {
+        padding-left: 36px;
+        padding-right: 0px;
+        SwitchRow {
+            icon: "minimized";
+            label: "Start minimized";
+            description: "Open TabletFlow in the background";
+            checked: root.start-minimized;
+            enabled: root.expanded;
+            horizontal-stretch: 1;
+            toggled => { root.start-minimized = !root.start-minimized; }
+        }
+    }
+}
+
 component SettingsPage inherits Rectangle {
     in property <string> backend-state;
     in-out property <string> theme: "System";
@@ -1367,7 +1421,6 @@ component SettingsPage inherits Rectangle {
     in-out property <bool> reduce-animations: false;
     in-out property <bool> start-with-system: false;
     in-out property <bool> start-minimized: false;
-    in-out property <bool> minimize-to-tray: false;
     in-out property <bool> close-to-tray: false;
     in-out property <bool> check-updates: true;
     in-out property <bool> pause-hidden: true;
@@ -1377,7 +1430,7 @@ component SettingsPage inherits Rectangle {
     in-out property <bool> show-diagnostics: false;
     callback open-github();
 
-    background: #111418;
+    background: AppTheme.canvas;
 
     ScrollView {
         width: parent.width;
@@ -1399,38 +1452,47 @@ component SettingsPage inherits Rectangle {
             PageHeader { icon: "settings"; title: "Settings"; subtitle: "TabletFlow"; }
 
             Rectangle { height: 13px; }
-            SectionHeader { icon: "theme"; title: "Appearance"; hint: "Not available yet"; }
+            SectionHeader { icon: "theme"; title: "Appearance"; hint: "Applied instantly"; }
             HorizontalLayout {
-                height: 49px;
+                height: AppTheme.row-height;
                 padding-left: 12px;
                 padding-right: 12px;
                 cross-axis-alignment: center;
-                Icon { name: "theme"; tint: #a8b1bd; width: 20px; height: 20px; }
-                Text { text: "Theme"; color: #dbe3eb; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
-                SegmentButton { label: "System"; selected: root.theme == "System"; enabled: false; }
-                SegmentButton { label: "Light"; selected: root.theme == "Light"; enabled: false; }
-                SegmentButton { label: "Dark"; selected: root.theme == "Dark"; enabled: false; }
+                Icon { name: "theme"; tint: AppTheme.icon; width: 20px; height: 20px; }
+                Text { text: "Theme"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
+                SegmentButton { label: "System"; selected: root.theme == "System"; enabled: true; clicked => { root.theme = "System"; AppTheme.mode = "system"; } }
+                SegmentButton { label: "Light"; selected: root.theme == "Light"; enabled: true; clicked => { root.theme = "Light"; AppTheme.mode = "light"; } }
+                SegmentButton { label: "Dark"; selected: root.theme == "Dark"; enabled: true; clicked => { root.theme = "Dark"; AppTheme.mode = "dark"; } }
             }
             HorizontalLayout {
-                height: 49px;
+                height: AppTheme.row-height;
                 padding-left: 12px;
                 padding-right: 12px;
                 cross-axis-alignment: center;
-                Icon { name: "accent"; tint: #a8b1bd; width: 20px; height: 20px; }
-                Text { text: "Accent color"; color: #dbe3eb; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
-                ColorOption { swatch: #8fb5e6; selected: root.accent == "Blue"; enabled: false; }
-                ColorOption { swatch: #d6aa72; selected: root.accent == "Amber"; enabled: false; }
-                ColorOption { swatch: #9ac7b0; selected: root.accent == "Mint"; enabled: false; }
+                Icon { name: "accent"; tint: AppTheme.icon; width: 20px; height: 20px; }
+                Text { text: "Accent color"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
+                ColorOption { swatch: #8fb5e6; selected: root.accent == "Blue"; enabled: true; clicked => { root.accent = "Blue"; AppTheme.accent = "Blue"; } }
+                ColorOption { swatch: #d6aa72; selected: root.accent == "Amber"; enabled: true; clicked => { root.accent = "Amber"; AppTheme.accent = "Amber"; } }
+                ColorOption { swatch: #9ac7b0; selected: root.accent == "Mint"; enabled: true; clicked => { root.accent = "Mint"; AppTheme.accent = "Mint"; } }
             }
             Divider {}
-            SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing throughout TabletFlow"; checked: root.compact-ui; enabled: false; }
-            SwitchRow { icon: "reduce"; label: "Reduce animations"; description: "Prefer instant transitions"; checked: root.reduce-animations; enabled: false; }
+            SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing throughout TabletFlow"; checked: root.compact-ui; enabled: true; toggled => { root.compact-ui = !root.compact-ui; AppTheme.compact = root.compact-ui; } }
+            SwitchRow { icon: "reduce"; label: "Reduce animations"; description: "Prefer instant transitions"; checked: root.reduce-animations; enabled: true; toggled => { root.reduce-animations = !root.reduce-animations; AppTheme.reduce-motion = root.reduce-animations; } }
 
             Rectangle { height: 17px; }
-            SectionHeader { icon: "general"; title: "General"; hint: "Not available yet"; }
-            SwitchRow { icon: "startup"; label: "Start with system"; checked: root.start-with-system; enabled: false; }
-            SwitchRow { icon: "minimized"; label: "Start minimized"; checked: root.start-minimized; enabled: false; }
-            SwitchRow { icon: "tray"; label: "Minimize to tray"; checked: root.minimize-to-tray; enabled: false; }
+            SectionHeader { icon: "general"; title: "General"; hint: "Applied instantly"; }
+            SwitchRow {
+                icon: "startup";
+                label: "Start with system";
+                description: "Open TabletFlow when you sign in";
+                checked: root.start-with-system;
+                enabled: true;
+                toggled => { root.start-with-system = !root.start-with-system; }
+            }
+            StartupSubsetting {
+                expanded: root.start-with-system;
+                start-minimized <=> root.start-minimized;
+            }
             SwitchRow { icon: "close"; label: "Close to tray"; checked: root.close-to-tray; enabled: false; }
             SwitchRow { icon: "updates"; label: "Check for updates"; checked: root.check-updates; enabled: false; }
 
@@ -1448,13 +1510,13 @@ component SettingsPage inherits Rectangle {
             SwitchRow { icon: "pause"; label: "Pause UI updates when hidden"; checked: root.pause-hidden; enabled: false; }
             SwitchRow { icon: "focus"; label: "Disable animations when unfocused"; checked: root.disable-unfocused-animations; enabled: false; }
             HorizontalLayout {
-                height: 49px;
+                height: AppTheme.row-height;
                 padding-left: 12px;
                 padding-right: 12px;
                 spacing: 12px;
                 cross-axis-alignment: center;
-                Icon { name: "polling"; tint: #a8b1bd; width: 20px; height: 20px; }
-                Text { text: "Background polling interval"; color: #dbe3eb; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
+                Icon { name: "polling"; tint: AppTheme.icon; width: 20px; height: 20px; }
+                Text { text: "Background polling interval"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
                 SegmentButton { label: "Auto"; selected: root.polling-interval == "Auto"; enabled: false; }
                 SegmentButton { label: "Low"; selected: root.polling-interval == "Low"; enabled: false; }
                 SegmentButton { label: "High"; selected: root.polling-interval == "High"; enabled: false; }
@@ -1475,11 +1537,14 @@ component SettingsPage inherits Rectangle {
                 clicked => {
                     root.theme = "System";
                     root.accent = "Blue";
+                    AppTheme.mode = "system";
+                    AppTheme.accent = "Blue";
                     root.compact-ui = false;
                     root.reduce-animations = false;
+                    AppTheme.compact = false;
+                    AppTheme.reduce-motion = false;
                     root.start-with-system = false;
                     root.start-minimized = false;
-                    root.minimize-to-tray = false;
                     root.close-to-tray = false;
                     root.check-updates = true;
                     root.pause-hidden = true;
@@ -1496,8 +1561,8 @@ component SettingsPage inherits Rectangle {
                     height: 38px;
                     padding-left: 12px;
                     padding-right: 12px;
-                    Text { text: "TabletFlow 0.1.0"; color: #7f8b99; font-size: 11px; horizontal-stretch: 1; vertical-alignment: center; }
-                    Text { text: "OpenTabletDriver: version unavailable"; color: #7f8b99; font-size: 11px; vertical-alignment: center; }
+                    Text { text: "TabletFlow 0.1.0"; color: AppTheme.text-muted; font-size: 11px; horizontal-stretch: 1; vertical-alignment: center; }
+                    Text { text: "OpenTabletDriver: version unavailable"; color: AppTheme.text-muted; font-size: 11px; vertical-alignment: center; }
                     LinkButton { label: "GitHub"; clicked => { root.open-github(); } }
                 }
             }
@@ -1510,7 +1575,7 @@ component SectionPage inherits Rectangle {
     in property <string> page-title;
     in property <string> message;
 
-    background: #111418;
+    background: AppTheme.canvas;
     VerticalLayout {
         padding-left: 34px;
         padding-right: 34px;
@@ -1520,7 +1585,7 @@ component SectionPage inherits Rectangle {
         PageHeader { icon: root.page-title == "Bindings" ? "buttons" : ""; title: root.page-title; subtitle: ""; }
         if root.message != "": Text {
             text: root.message;
-            color: #9298aa;
+            color: AppTheme.text-muted;
             font-size: 13px;
         }
         Rectangle { vertical-stretch: 1; }
@@ -1552,7 +1617,6 @@ export component MainWindow inherits Window {
     in-out property <bool> reduce-animations: false;
     in-out property <bool> start-with-system: false;
     in-out property <bool> start-minimized: false;
-    in-out property <bool> minimize-to-tray: false;
     in-out property <bool> close-to-tray: false;
     in-out property <bool> check-updates: true;
     in-out property <bool> pause-hidden: true;
@@ -1569,7 +1633,7 @@ export component MainWindow inherits Window {
     Rectangle {
         width: parent.width;
         height: parent.height;
-        background: #111418;
+        background: AppTheme.canvas;
 
         HorizontalLayout {
             spacing: 0px;
@@ -1579,7 +1643,7 @@ export component MainWindow inherits Window {
             }
             Rectangle {
                 horizontal-stretch: 1;
-                background: #111418;
+                background: AppTheme.canvas;
 
                 if root.active-page == "Overview" && root.backend-state == "daemon-not-running": EmptyState {
                     icon: "daemon";
@@ -1655,7 +1719,6 @@ export component MainWindow inherits Window {
                     reduce-animations <=> root.reduce-animations;
                     start-with-system <=> root.start-with-system;
                     start-minimized <=> root.start-minimized;
-                    minimize-to-tray <=> root.minimize-to-tray;
                     close-to-tray <=> root.close-to-tray;
                     check-updates <=> root.check-updates;
                     pause-hidden <=> root.pause-hidden;
