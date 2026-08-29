@@ -58,14 +58,17 @@ jobs:
         run: cargo build --release
 
       - name: Build OpenTabletDriver daemon
+        id: build-daemon
         env:
           OTD_ROOT: ${{ github.workspace }}/opentabletdriver
           DOTNET_COMMAND: dotnet
-        run: ./packaging/build-daemon.sh "${{ matrix.rid }}" build/otd
+        run: |
+          daemon_path="$(./packaging/build-daemon.sh "${{ matrix.rid }}" build/otd)"
+          echo "daemon_path=$daemon_path" >> "$GITHUB_OUTPUT"
 
       - name: Package macOS DMG
         env:
-          OTD_DAEMON_PATH: ${{ github.workspace }}/build/otd/OpenTabletDriver.Daemon
+          OTD_DAEMON_PATH: ${{ steps.build-daemon.outputs.daemon_path }}
           OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
           TABLETFLOW_ARCH: ${{ matrix.arch }}
         run: |
