@@ -1,7 +1,7 @@
 slint::include_modules!();
 
 use serde_json::{json, Value};
-use slint::{CloseRequestResponse, ComponentHandle};
+use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecModel};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -160,12 +160,38 @@ struct BackendSnapshot {
     device_name: String,
     preview_width: f32,
     preview_height: f32,
+    tablet_width: f32,
+    tablet_height: f32,
     area_width: String,
     area_height: String,
     area_x: String,
     area_y: String,
     area_rotation: String,
+    monitor_index: i32,
     pen_data_available: bool,
+}
+
+#[derive(Clone, Debug)]
+struct DisplayInfo {
+    index: i32,
+    label: String,
+    width: f32,
+    height: f32,
+    x: f32,
+    y: f32,
+}
+
+impl DisplayInfo {
+    fn fallback() -> Self {
+        Self {
+            index: 0,
+            label: "Primary display · 1920 × 1080".into(),
+            width: 1920.0,
+            height: 1080.0,
+            x: 960.0,
+            y: 540.0,
+        }
+    }
 }
 
 enum BackendCommand {
@@ -177,7 +203,178 @@ enum BackendCommand {
         x: String,
         y: String,
         rotation: String,
+        display: Option<DisplayInfo>,
     },
+}
+
+fn display_label(index: usize, width: f32, height: f32) -> String {
+    format!("Display {} · {:.0} × {:.0}", index + 1, width, height)
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MacPoint {
+    x: f64,
+    y: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MacSize {
+    width: f64,
+    height: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MacRect {
+    origin: MacPoint,
+    size: MacSize,
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGGetActiveDisplayList(max_displays: u32, active_displays: *mut u32, display_count: *mut u32) -> i32;
+    fn CGDisplayBounds(display: u32) -> MacRect;
+}
+
+#[cfg(target_os = "macos")]
+fn enumerate_macos_displays() -> Vec<DisplayInfo> {
+    let mut ids = [0u32; 16];
+    let mut count = 0u32;
+    let result = unsafe { CGGetActiveDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count) };
+    if result != 0 || count == 0 {
+        return vec![DisplayInfo::fallback()];
+    }
+
+    let bounds = ids[..count.min(ids.len() as u32) as usize]
+        .iter()
+        .map(|id| unsafe { CGDisplayBounds(*id) })
+        .collect::<Vec<_>>();
+    let min_x = bounds
+        .iter()
+        .map(|rect| rect.origin.x)
+        .fold(f64::INFINITY, f64::min);
+    let min_y = bounds
+        .iter()
+        .map(|rect| rect.origin.y)
+        .fold(f64::INFINITY, f64::min);
+
+    bounds
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, rect)| {
+            let width = rect.size.width as f32;
+            let height = rect.size.height as f32;
+            (width > 0.0 && height > 0.0).then(|| DisplayInfo {
+                index: index as i32,
+                label: display_label(index, width, height),
+                width,
+                height,
+                x: (rect.origin.x - min_x) as f32 + width / 2.0,
+                y: (rect.origin.y - min_y) as f32 + height / 2.0,
+            })
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn enumerate_linux_displays() -> Vec<DisplayInfo> {
+    let Ok(output) = Command::new("xrandr").arg("--query").output() else {
+        return vec![DisplayInfo::fallback()];
+    };
+    if !output.status.success() {
+        return vec![DisplayInfo::fallback()];
+    }
+
+    let mut displays = Vec::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        if !line.contains(" connected") {
+            continue;
+        }
+        let Some(geometry) = line.split_whitespace().find(|part| {
+            let Some(size_end) = part.find(|character: char| character == '+' || character == '-') else {
+                return false;
+            };
+            part[..size_end].contains('x')
+                && part[size_end + 1..]
+                    .find(|character: char| character == '+' || character == '-')
+                    .is_some()
+        }) else {
+            continue;
+        };
+        let Some(size_end) = geometry.find(|character: char| character == '+' || character == '-') else {
+            continue;
+        };
+        let Some(separator) = geometry[size_end + 1..]
+            .find(|character: char| character == '+' || character == '-')
+            .map(|offset| size_end + 1 + offset)
+        else {
+            continue;
+        };
+        let Some((width, height)) = geometry[..size_end].split_once('x').and_then(|(width, height)| {
+            Some((width.parse::<f32>().ok()?, height.parse::<f32>().ok()?))
+        }) else {
+            continue;
+        };
+        let Ok(x) = geometry[size_end..separator].parse::<f32>() else {
+            continue;
+        };
+        let Ok(y) = geometry[separator..].parse::<f32>() else {
+            continue;
+        };
+        displays.push((width, height, x, y));
+    }
+
+    if displays.is_empty() {
+        return vec![DisplayInfo::fallback()];
+    }
+    let min_x = displays.iter().map(|display| display.2).fold(f32::INFINITY, f32::min);
+    let min_y = displays.iter().map(|display| display.3).fold(f32::INFINITY, f32::min);
+    displays
+        .into_iter()
+        .enumerate()
+        .map(|(index, (width, height, x, y))| DisplayInfo {
+            index: index as i32,
+            label: display_label(index, width, height),
+            width,
+            height,
+            x: x - min_x + width / 2.0,
+            y: y - min_y + height / 2.0,
+        })
+        .collect()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn enumerate_displays() -> Vec<DisplayInfo> {
+    vec![DisplayInfo::fallback()]
+}
+
+#[cfg(target_os = "macos")]
+fn enumerate_displays() -> Vec<DisplayInfo> {
+    enumerate_macos_displays()
+}
+
+#[cfg(target_os = "linux")]
+fn enumerate_displays() -> Vec<DisplayInfo> {
+    enumerate_linux_displays()
+}
+
+fn selected_display_index(displays: &[DisplayInfo], width: f32, height: f32, x: f32, y: f32) -> i32 {
+    displays
+        .iter()
+        .find(|display| {
+            (display.width - width).abs() < 2.0
+                && (display.height - height).abs() < 2.0
+                && (display.x - x).abs() < 3.0
+                && (display.y - y).abs() < 3.0
+        })
+        .map(|display| display.index)
+        .unwrap_or(-1)
 }
 
 fn json_member<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
@@ -226,13 +423,17 @@ fn settings_for_tablet(settings: &Value, tablet_name: &str) -> Option<Value> {
     })
 }
 
-fn query_backend(client: &mut DaemonClient, detect: bool) -> io::Result<BackendSnapshot> {
+fn query_backend(
+    client: &mut DaemonClient,
+    detect: bool,
+    displays: &[DisplayInfo],
+) -> io::Result<BackendSnapshot> {
     let tablets = if detect {
         client.call("DetectTablets", json!([]))?
     } else {
         client.call("GetTablets", json!([]))?
     };
-    let Some((device_name, _tablet)) = tablet_from_result(&tablets) else {
+    let Some((device_name, tablet)) = tablet_from_result(&tablets) else {
         return Ok(BackendSnapshot {
             state: "no-tablet",
             ..Default::default()
@@ -244,19 +445,46 @@ fn query_backend(client: &mut DaemonClient, detect: bool) -> io::Result<BackendS
         device_name: device_name.clone(),
         preview_width: 152.0,
         preview_height: 95.0,
+        tablet_width: 152.0,
+        tablet_height: 95.0,
+        monitor_index: -1,
         ..Default::default()
     };
+    if let Some(digitizer) = json_member(&tablet, "Properties")
+        .and_then(|properties| json_member(properties, "Specifications"))
+        .and_then(|specifications| json_member(specifications, "Digitizer"))
+    {
+        let width = json_member(digitizer, "Width").and_then(Value::as_f64);
+        let height = json_member(digitizer, "Height").and_then(Value::as_f64);
+        if let (Some(width), Some(height)) = (width, height) {
+            if width.is_finite() && height.is_finite() && width > 0.1 && height > 0.1 {
+                snapshot.tablet_width = width as f32;
+                snapshot.tablet_height = height as f32;
+            }
+        }
+    }
     if let Ok(settings) = client.call("GetSettings", json!([])) {
         if let Some(profile) = settings_for_tablet(&settings, &device_name) {
             if let Some(absolute) = json_member(&profile, "AbsoluteModeSettings") {
                 if let Some(display_area) = json_member(absolute, "Display") {
                     let width = json_member(display_area, "Width").and_then(Value::as_f64);
                     let height = json_member(display_area, "Height").and_then(Value::as_f64);
+                    let x = json_member(display_area, "X").and_then(Value::as_f64);
+                    let y = json_member(display_area, "Y").and_then(Value::as_f64);
                     if let (Some(width), Some(height)) = (width, height) {
                         let aspect = width / height;
                         if aspect.is_finite() && aspect > 0.1 && aspect < 10.0 {
                             snapshot.preview_width = (width / 10.0) as f32;
                             snapshot.preview_height = (height / 10.0) as f32;
+                        }
+                        if let (Some(x), Some(y)) = (x, y) {
+                            snapshot.monitor_index = selected_display_index(
+                                displays,
+                                width as f32,
+                                height as f32,
+                                x as f32,
+                                y as f32,
+                            );
                         }
                     }
                 }
@@ -282,6 +510,7 @@ fn apply_area(client: &mut DaemonClient, command: BackendCommand) -> io::Result<
         x,
         y,
         rotation,
+        display,
     } = command
     else {
         return Ok(());
@@ -327,6 +556,26 @@ fn apply_area(client: &mut DaemonClient, command: BackendCommand) -> io::Result<
         *field = json!(number);
     }
 
+    if let Some(display) = display {
+        let display_area = json_member_mut(profile, "AbsoluteModeSettings")
+            .and_then(|absolute| json_member_mut(absolute, "Display"))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Display area missing"))?;
+        for (name, number) in [
+            ("Width", display.width),
+            ("Height", display.height),
+            ("X", display.x),
+            ("Y", display.y),
+        ] {
+            let Some(field) = json_member_mut(display_area, name) else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Display field {name} missing"),
+                ));
+            };
+            *field = json!(number);
+        }
+    }
+
     let _ = client.call("SetSettings", json!([settings]))?;
     Ok(())
 }
@@ -336,23 +585,32 @@ fn publish_backend_snapshot(ui: &MainWindow, snapshot: BackendSnapshot) {
     ui.set_device_name(snapshot.device_name.into());
     ui.set_area_preview_width(snapshot.preview_width);
     ui.set_area_preview_height(snapshot.preview_height);
+    ui.set_tablet_bounds_width(snapshot.tablet_width);
+    ui.set_tablet_bounds_height(snapshot.tablet_height);
     ui.set_area_width(snapshot.area_width.into());
     ui.set_area_height(snapshot.area_height.into());
     ui.set_area_x(snapshot.area_x.into());
     ui.set_area_y(snapshot.area_y.into());
     ui.set_area_rotation(snapshot.area_rotation.into());
+    if snapshot.monitor_index >= 0 {
+        ui.set_monitor_index(snapshot.monitor_index);
+    }
     ui.set_pen_data_available(snapshot.pen_data_available);
 }
 
-fn start_backend_worker(ui: slint::Weak<MainWindow>) -> Sender<BackendCommand> {
+fn start_backend_worker(ui: slint::Weak<MainWindow>, displays: Vec<DisplayInfo>) -> Sender<BackendCommand> {
     let (command_sender, command_receiver) = mpsc::channel();
     thread::spawn(move || {
-        backend_worker(ui, command_receiver);
+        backend_worker(ui, command_receiver, displays);
     });
     command_sender
 }
 
-fn backend_worker(ui: slint::Weak<MainWindow>, command_receiver: Receiver<BackendCommand>) {
+fn backend_worker(
+    ui: slint::Weak<MainWindow>,
+    command_receiver: Receiver<BackendCommand>,
+    displays: Vec<DisplayInfo>,
+) {
     let mut client = None;
     let mut detect_requested = false;
     let mut last_ipc_error = String::new();
@@ -418,7 +676,7 @@ fn backend_worker(ui: slint::Weak<MainWindow>, command_receiver: Receiver<Backen
             std::mem::take(&mut detect_requested) || BACKEND_RETRY.swap(false, Ordering::Relaxed);
         let result = client
             .as_mut()
-            .map(|connection| query_backend(connection, detect));
+            .map(|connection| query_backend(connection, detect, &displays));
 
         if let Some(Ok(snapshot)) = result {
             last_ipc_error.clear();
@@ -471,6 +729,13 @@ fn backend_worker(ui: slint::Weak<MainWindow>, command_receiver: Receiver<Backen
 struct Settings {
     theme: String,
     accent: String,
+    custom_colors: bool,
+    custom_background_hue: f32,
+    custom_background_saturation: f32,
+    custom_background_value: f32,
+    custom_accent_hue: f32,
+    custom_accent_saturation: f32,
+    custom_accent_value: f32,
     compact_ui: bool,
     reduce_animations: bool,
     start_with_system: bool,
@@ -489,6 +754,13 @@ impl Default for Settings {
         Self {
             theme: "System".into(),
             accent: "Blue".into(),
+            custom_colors: false,
+            custom_background_hue: 212.0,
+            custom_background_saturation: 0.10,
+            custom_background_value: 0.96,
+            custom_accent_hue: 212.0,
+            custom_accent_saturation: 0.42,
+            custom_accent_value: 0.86,
             compact_ui: false,
             reduce_animations: false,
             start_with_system: false,
@@ -510,6 +782,15 @@ fn parse_bool(value: &str, fallback: bool) -> bool {
         "false" => false,
         _ => fallback,
     }
+}
+
+fn parse_float(value: &str, fallback: f32, minimum: f32, maximum: f32) -> f32 {
+    value
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| value.clamp(minimum, maximum))
+        .unwrap_or(fallback)
 }
 
 fn settings_path() -> Option<PathBuf> {
@@ -559,6 +840,31 @@ fn load_settings() -> Settings {
             "accent" if matches!(value, "Blue" | "Amber" | "Mint") => {
                 settings.accent = value.into()
             }
+            "custom_colors" => settings.custom_colors = parse_bool(value, settings.custom_colors),
+            "custom_background_hue" => {
+                settings.custom_background_hue =
+                    parse_float(value, settings.custom_background_hue, 0.0, 360.0)
+            }
+            "custom_background_saturation" => {
+                settings.custom_background_saturation =
+                    parse_float(value, settings.custom_background_saturation, 0.0, 1.0)
+            }
+            "custom_background_value" => {
+                settings.custom_background_value =
+                    parse_float(value, settings.custom_background_value, 0.0, 1.0)
+            }
+            "custom_accent_hue" => {
+                settings.custom_accent_hue =
+                    parse_float(value, settings.custom_accent_hue, 0.0, 360.0)
+            }
+            "custom_accent_saturation" => {
+                settings.custom_accent_saturation =
+                    parse_float(value, settings.custom_accent_saturation, 0.0, 1.0)
+            }
+            "custom_accent_value" => {
+                settings.custom_accent_value =
+                    parse_float(value, settings.custom_accent_value, 0.0, 1.0)
+            }
             "compact_ui" => settings.compact_ui = parse_bool(value, settings.compact_ui),
             "reduce_animations" => {
                 settings.reduce_animations = parse_bool(value, settings.reduce_animations)
@@ -602,9 +908,16 @@ fn save_settings(ui: &MainWindow) -> io::Result<()> {
     fs::create_dir_all(parent)?;
 
     let contents = format!(
-        "theme={}\naccent={}\ncompact_ui={}\nreduce_animations={}\nstart_with_system={}\nstart_minimized={}\nclose_to_tray={}\ncheck_updates={}\npause_hidden={}\ndisable_unfocused_animations={}\npolling_interval={}\nlow_power_mode={}\nshow_diagnostics={}\n",
+        "theme={}\naccent={}\ncustom_colors={}\ncustom_background_hue={:.2}\ncustom_background_saturation={:.4}\ncustom_background_value={:.4}\ncustom_accent_hue={:.2}\ncustom_accent_saturation={:.4}\ncustom_accent_value={:.4}\ncompact_ui={}\nreduce_animations={}\nstart_with_system={}\nstart_minimized={}\nclose_to_tray={}\ncheck_updates={}\npause_hidden={}\ndisable_unfocused_animations={}\npolling_interval={}\nlow_power_mode={}\nshow_diagnostics={}\n",
         ui.get_theme(),
         ui.get_accent(),
+        ui.get_custom_colors(),
+        ui.get_custom_background_hue(),
+        ui.get_custom_background_saturation(),
+        ui.get_custom_background_value(),
+        ui.get_custom_accent_hue(),
+        ui.get_custom_accent_saturation(),
+        ui.get_custom_accent_value(),
         ui.get_compact_ui(),
         ui.get_reduce_animations(),
         ui.get_start_with_system(),
@@ -626,6 +939,13 @@ fn save_settings(ui: &MainWindow) -> io::Result<()> {
 fn apply_settings(ui: &MainWindow, settings: &Settings) {
     ui.set_theme(settings.theme.clone().into());
     ui.set_accent(settings.accent.clone().into());
+    ui.set_custom_colors(settings.custom_colors);
+    ui.set_custom_background_hue(settings.custom_background_hue);
+    ui.set_custom_background_saturation(settings.custom_background_saturation);
+    ui.set_custom_background_value(settings.custom_background_value);
+    ui.set_custom_accent_hue(settings.custom_accent_hue);
+    ui.set_custom_accent_saturation(settings.custom_accent_saturation);
+    ui.set_custom_accent_value(settings.custom_accent_value);
     ui.set_compact_ui(settings.compact_ui);
     ui.set_reduce_animations(settings.reduce_animations);
     ui.set_start_with_system(settings.start_with_system);
@@ -650,6 +970,13 @@ fn apply_settings(ui: &MainWindow, settings: &Settings) {
         .into(),
     );
     theme.set_accent(settings.accent.clone().into());
+    theme.set_custom_colors(settings.custom_colors);
+    theme.set_custom_background_hue(settings.custom_background_hue);
+    theme.set_custom_background_saturation(settings.custom_background_saturation);
+    theme.set_custom_background_value(settings.custom_background_value);
+    theme.set_custom_accent_hue(settings.custom_accent_hue);
+    theme.set_custom_accent_saturation(settings.custom_accent_saturation);
+    theme.set_custom_accent_value(settings.custom_accent_value);
     theme.set_compact(settings.compact_ui);
     theme.set_reduce_motion(settings.reduce_animations);
 }

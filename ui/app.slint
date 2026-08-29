@@ -5,25 +5,52 @@ export global AppTheme {
     in-out property <string> accent: "Blue";
     in-out property <bool> compact: false;
     in-out property <bool> reduce-motion: false;
+    in-out property <bool> custom-colors: false;
+    in-out property <float> custom-background-hue: 212;
+    in-out property <float> custom-background-saturation: 0.10;
+    in-out property <float> custom-background-value: 0.96;
+    in-out property <float> custom-accent-hue: 212;
+    in-out property <float> custom-accent-saturation: 0.42;
+    in-out property <float> custom-accent-value: 0.86;
 
     out property <bool> light: mode == "light" || (mode == "system" && Palette.color-scheme == ColorScheme.light);
-    out property <color> canvas: light ? #f5f7fa : #111418;
-    out property <color> sidebar: light ? #edf1f5 : #171b20;
-    out property <color> surface: light ? #ffffff : #181d23;
-    out property <color> surface-alt: light ? #e9eef3 : #202830;
-    out property <color> line: light ? #d6dee6 : #2a323b;
-    out property <color> text: light ? #17212b : #eef3f8;
-    out property <color> text-secondary: light ? #435260 : #dbe3eb;
-    out property <color> text-muted: light ? #667582 : #8997a6;
-    out property <color> icon: light ? #5d6c79 : #a8b1bd;
-    out property <color> accent-color: accent == "Amber" ? (light ? #8b642e : #d6aa72) : (accent == "Mint" ? (light ? #3f8066 : #9ac7b0) : (light ? #426f9e : #8fb5e6));
-    out property <color> accent-soft: accent == "Amber" ? (light ? #f1e5d2 : #3f3526) : (accent == "Mint" ? (light ? #dcefe6 : #273d36) : (light ? #dce9f7 : #27384d));
-    out property <color> accent-pressed: accent == "Amber" ? (light ? #745226 : #a47742) : (accent == "Mint" ? (light ? #326650 : #6c9f88) : (light ? #355b83 : #7398c8));
-    out property <color> accent-on: light ? #ffffff : #101820;
+    out property <color> custom-background-color: Colors.hsv(custom-background-hue, custom-background-saturation, custom-background-value);
+    out property <color> custom-accent-color: Colors.hsv(custom-accent-hue, custom-accent-saturation, custom-accent-value);
+    out property <bool> custom-background-light: custom-background-color.red * 0.299 + custom-background-color.green * 0.587 + custom-background-color.blue * 0.114 > 145;
+    out property <bool> effective-light: custom-colors ? custom-background-light : light;
+    // One cool-neutral design system keeps light and dark mode visually related.
+    out property <color> canvas: custom-colors ? custom-background-color : (light ? #f3f5f7 : #0d1116);
+    out property <color> sidebar: custom-colors ? (effective-light ? custom-background-color.darker(0.05) : custom-background-color.brighter(0.06)) : (light ? #e9edf1 : #12171d);
+    out property <color> surface: custom-colors ? (effective-light ? custom-background-color.brighter(0.05) : custom-background-color.brighter(0.10)) : (light ? #fbfcfd : #171d24);
+    out property <color> surface-raised: custom-colors ? (effective-light ? custom-background-color.brighter(0.10) : custom-background-color.brighter(0.15)) : (light ? #ffffff : #1c232c);
+    out property <color> surface-alt: custom-colors ? (effective-light ? custom-background-color.darker(0.04) : custom-background-color.brighter(0.20)) : (light ? #edf1f4 : #202832);
+    out property <color> surface-shell: custom-colors ? (effective-light ? custom-background-color.darker(0.10) : custom-background-color.darker(0.16)) : (light ? #dfe5ea : #0a0e12);
+    out property <color> line: custom-colors ? (effective-light ? custom-accent-color.with-alpha(0.14) : custom-accent-color.with-alpha(0.20)) : (light ? #2437481a : #e7f0fa18);
+    out property <color> line-strong: custom-colors ? (effective-light ? custom-accent-color.with-alpha(0.28) : custom-accent-color.with-alpha(0.34)) : (light ? #2437482e : #e7f0fa2e);
+    out property <color> text: custom-colors ? (effective-light ? #15202a : #f2f5f8) : (light ? #17222c : #f2f5f8);
+    out property <color> text-secondary: custom-colors ? (effective-light ? #334551 : #d7dee6) : (light ? #3f4f5d : #d7dee6);
+    out property <color> text-muted: custom-colors ? (effective-light ? #586b78 : #a2adb8) : (light ? #61727f : #929eaa);
+    out property <color> icon: custom-colors ? (effective-light ? #506473 : #adbac6) : (light ? #596a78 : #a9b4c0);
+    out property <color> hover: custom-colors ? (effective-light ? custom-accent-color.with-alpha(0.10) : custom-accent-color.with-alpha(0.16)) : (light ? #dfe6ec : #222a33);
+    out property <color> pressed: custom-colors ? (effective-light ? custom-accent-color.with-alpha(0.16) : custom-accent-color.with-alpha(0.24)) : (light ? #d4dde5 : #2a343f);
+    out property <color> shadow: custom-colors ? (effective-light ? custom-background-color.darker(0.30).with-alpha(0.14) : #02070d80) : (light ? #20364f20 : #02070d80);
+    out property <color> success: effective-light ? #39735d : #86bda8;
+    out property <color> success-soft: effective-light ? #dcebe5 : #1f382f;
+    out property <color> warning: effective-light ? #8a622d : #d1a56b;
+    out property <color> danger: effective-light ? #9a4d50 : #e1969a;
+    out property <color> danger-soft: effective-light ? #f3e3e4 : #3d2529;
+    out property <color> scrim: effective-light ? #1524335e : #00050a99;
+    out property <color> accent-color: custom-colors ? custom-accent-color : (accent == "Amber" ? (light ? #8a642f : #d2a86f) : (accent == "Mint" ? (light ? #3f7b64 : #91c3ac) : (light ? #456f9b : #8eb4df)));
+    out property <color> accent-soft: custom-colors ? (effective-light ? custom-accent-color.with-alpha(0.16) : custom-accent-color.with-alpha(0.24)) : (accent == "Amber" ? (light ? #eee3d3 : #3b3225) : (accent == "Mint" ? (light ? #dcebe4 : #233a32) : (light ? #dce7f2 : #25364a)));
+    out property <color> accent-pressed: custom-colors ? (effective-light ? custom-accent-color.darker(0.16) : custom-accent-color.brighter(0.10)) : (accent == "Amber" ? (light ? #735126 : #ad824c) : (accent == "Mint" ? (light ? #32624f : #6f9f8b) : (light ? #36597d : #7195bf)));
+    out property <color> accent-on: effective-light ? #ffffff : #10171f;
+    out property <brush> hero-fill: effective-light
+        ? @linear-gradient(135deg, #ffffff 0%, #e8eff5 100%)
+        : @linear-gradient(135deg, #1d252e 0%, #172536 100%);
 
-    out property <length> row-height: compact ? 43px : 49px;
-    out property <length> nav-height: compact ? 34px : 36px;
-    out property <length> button-height: compact ? 34px : 38px;
+    out property <length> row-height: compact ? 44px : 50px;
+    out property <length> nav-height: compact ? 38px : 42px;
+    out property <length> button-height: compact ? 40px : 44px;
 }
 
 // Geometry-based icons keep the UI independent from font glyph coverage.
@@ -381,20 +408,47 @@ component Icon inherits Rectangle {
 component AppButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary;
+    in property <bool> danger: false;
     in property <bool> enabled: true;
+    in property <length> button-width: root.primary ? 144px : 112px;
     callback clicked();
 
     height: AppTheme.button-height;
-    width: root.primary ? 132px : 104px;
-    opacity: root.enabled ? (touch.pressed ? 0.88 : 1.0) : 0.42;
-    border-radius: 19px;
-    background: root.primary ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-color) : (touch.pressed ? #303842 : (touch.has-hover ? #252c35 : AppTheme.surface));
-    border-width: root.primary ? 0px : 1px;
-    border-color: AppTheme.line;
+    width: root.button-width;
+    opacity: root.enabled ? 1.0 : 0.42;
+    border-radius: 13px;
+    background: root.danger ? (touch.pressed ? AppTheme.danger : (touch.has-hover ? AppTheme.danger-soft : AppTheme.surface-raised)) : (root.primary ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-color) : (touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : AppTheme.surface-raised)));
+    border-width: button-focus.has-focus ? 2px : (root.primary ? 0px : 1px);
+    border-color: button-focus.has-focus ? (root.primary ? AppTheme.accent-on : (root.danger ? AppTheme.danger : AppTheme.accent-color)) : AppTheme.line;
+    drop-shadow-blur: root.primary && root.enabled ? 12px : 0px;
+    drop-shadow-color: root.primary ? AppTheme.shadow : transparent;
+    drop-shadow-offset-y: root.primary ? 5px : 0px;
+    transform-origin: { x: root.width / 2, y: root.height / 2 };
+    transform-scale-x: touch.pressed && root.enabled ? 98% : 100%;
+    transform-scale-y: touch.pressed && root.enabled ? 98% : 100%;
+    forward-focus: button-focus;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { touch.clicked(); }
+
+    animate background, border-color, transform-scale-x, transform-scale-y {
+        duration: AppTheme.reduce-motion ? 80ms : 180ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    Rectangle {
+        x: 10px;
+        y: 1px;
+        width: parent.width - 20px;
+        height: 1px;
+        border-radius: 1px;
+        background: root.primary ? #ffffff35 : (AppTheme.light ? #ffffffc0 : #ffffff18);
+    }
 
     Text {
         text: root.label;
-        color: root.primary ? AppTheme.accent-on : AppTheme.text-secondary;
+        color: root.danger ? (touch.pressed ? AppTheme.accent-on : AppTheme.danger) : (root.primary ? AppTheme.accent-on : AppTheme.text-secondary);
         font-size: 13px;
         font-weight: 600;
         horizontal-alignment: center;
@@ -407,6 +461,19 @@ component AppButton inherits Rectangle {
         enabled: root.enabled;
         clicked => { root.clicked(); }
     }
+
+    button-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 component NavItem inherits Rectangle {
@@ -414,11 +481,26 @@ component NavItem inherits Rectangle {
     in property <string> label;
     in property <bool> selected;
     in property <bool> compact: false;
+    in property <bool> enabled: true;
     callback clicked();
 
     height: AppTheme.nav-height;
-    border-radius: 10px;
-    background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed ? #29313a : (touch.has-hover ? #20262d : transparent));
+    border-radius: 12px;
+    background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : transparent));
+    border-width: nav-focus.has-focus ? 1px : 0px;
+    border-color: AppTheme.accent-color;
+    transform-origin: { x: root.width / 2, y: root.height / 2 };
+    transform-scale-x: touch.pressed ? 98% : 100%;
+    transform-scale-y: touch.pressed ? 98% : 100%;
+    forward-focus: nav-focus;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { touch.clicked(); }
+
+    animate background, transform-scale-x, transform-scale-y {
+        duration: AppTheme.reduce-motion ? 80ms : 180ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
+    }
 
     HorizontalLayout {
         padding-left: root.compact ? 0px : 11px;
@@ -428,12 +510,12 @@ component NavItem inherits Rectangle {
         cross-axis-alignment: center;
         Icon {
             name: root.icon;
-            tint: root.selected ? AppTheme.accent-color : (touch.pressed ? #cbd4df : AppTheme.icon);
+            tint: root.selected ? AppTheme.accent-color : (touch.pressed ? AppTheme.text-secondary : AppTheme.icon);
             width: 18px;
         }
         if !root.compact: Text {
             text: root.label;
-            color: root.selected ? AppTheme.text : #b8c1cc;
+            color: root.selected ? AppTheme.text : AppTheme.text-secondary;
             font-size: 13px;
             font-weight: root.selected ? 650 : 450;
             vertical-alignment: center;
@@ -442,104 +524,211 @@ component NavItem inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: root.enabled;
         clicked => { root.clicked(); }
+    }
+
+    nav-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
     }
 }
 
 component Sidebar inherits Rectangle {
     in property <string> active-page;
+    in property <string> backend-state;
     in property <bool> compact: false;
     in property <bool> overlay: false;
+    in property <bool> interactive: true;
+    in property <bool> overlay-open: true;
     callback navigate(string);
     callback toggle-overlay();
 
-    width: root.compact ? 64px : 196px;
+    function connection-title() -> string {
+        return root.backend-state == "ready" ? "Driver connected"
+            : (root.backend-state == "daemon-not-running" ? "Driver offline"
+            : (root.backend-state == "daemon-starting" ? "Starting driver"
+            : (root.backend-state == "daemon-running" ? "Driver connected"
+            : (root.backend-state == "no-tablet" ? "Driver connected" : "Checking driver"))));
+    }
+
+    function connection-detail() -> string {
+        return root.backend-state == "ready" ? "Tablet is ready"
+            : (root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver"
+            : (root.backend-state == "daemon-starting" ? "Please wait"
+            : (root.backend-state == "daemon-running" ? "Waiting for a tablet"
+            : (root.backend-state == "no-tablet" ? "No tablet connected" : "Connecting to OpenTabletDriver"))));
+    }
+
+    width: root.compact ? 72px : 220px;
     background: AppTheme.sidebar;
+    accessible-role: navigation;
+    accessible-label: "Primary navigation";
 
     VerticalLayout {
-        padding-left: root.compact ? 10px : 14px;
-        padding-right: root.compact ? 10px : 14px;
-        padding-top: 17px;
-        padding-bottom: 17px;
-        spacing: 4px;
+        padding-left: root.compact ? 11px : 14px;
+        padding-right: root.compact ? 11px : 14px;
+        padding-top: 14px;
+        padding-bottom: 14px;
+        spacing: 5px;
 
-        Rectangle {
-            height: 37px;
-            border-radius: 9px;
-            background: touch.pressed ? #27303a : (touch.has-hover ? #20262d : transparent);
+            brand := Rectangle {
+                height: 48px;
+                border-radius: 14px;
+                background: brand-touch.pressed ? AppTheme.pressed : (brand-touch.has-hover ? AppTheme.hover : transparent);
+                border-width: brand-focus.has-focus ? 2px : 0px;
+                border-color: AppTheme.accent-color;
+                forward-focus: brand-focus;
+            accessible-role: button;
+            accessible-label: root.compact ? "Open navigation" : "Open overview";
+            accessible-action-default => { brand-touch.clicked(); }
             HorizontalLayout {
                 padding-left: root.compact ? 10px : 8px;
-                spacing: 9px;
+                padding-right: root.compact ? 10px : 8px;
+                spacing: 10px;
+                alignment: root.compact ? center : start;
                 cross-axis-alignment: center;
                 Rectangle {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: 8px;
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 9px;
                     background: AppTheme.accent-color;
+                    drop-shadow-blur: 10px;
+                    drop-shadow-color: AppTheme.shadow;
+                    drop-shadow-offset-y: 4px;
                     Icon {
                         name: "logo";
                         tint: AppTheme.accent-on;
-                        x: 3px;
-                        y: 3px;
+                        x: 5px;
+                        y: 5px;
                     }
                 }
-                if !root.compact: Text {
-                    text: "TabletFlow";
-                    color: AppTheme.text;
-                    font-size: 15px;
-                    font-weight: 700;
-                    vertical-alignment: center;
+                if !root.compact: VerticalLayout {
+                    spacing: 1px;
+                    vertical-stretch: 1;
+                    alignment: center;
+                    Text {
+                        text: "TabletFlow";
+                        color: AppTheme.text;
+                        font-size: 15px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Tablet control";
+                        color: AppTheme.text-muted;
+                        font-size: 10px;
+                    }
                 }
             }
-            touch := TouchArea {
-                clicked => { root.navigate("Overview"); }
+            brand-touch := TouchArea {
+                enabled: root.interactive;
+                clicked => {
+                    if root.compact {
+                        root.toggle-overlay();
+                    } else {
+                        root.navigate("Overview");
+                    }
+                }
+            }
+            brand-focus := FocusScope {
+                x: 0px;
+                width: 0px;
+                enabled: root.interactive;
+                key-pressed(event) => {
+                    if event.text == " " || event.text == "\n" {
+                        brand-touch.clicked();
+                        return accept;
+                    }
+                    return reject;
+                }
             }
         }
 
-        Rectangle { height: 18px; }
+        Rectangle { height: 12px; }
+
+        NavItem {
+            icon: "home";
+            label: "Overview";
+            selected: root.active-page == "Overview";
+            compact: root.compact;
+            enabled: root.interactive;
+            clicked => { root.navigate("Overview"); }
+        }
 
         NavItem {
             icon: "area";
-            label: "Area";
+            label: "Active area";
             selected: root.active-page == "Area";
             compact: root.compact;
+            enabled: root.interactive;
             clicked => { root.navigate("Area"); }
-        }
-        NavItem {
-            icon: "pen";
-            label: "Pen";
-            selected: root.active-page == "Pen";
-            compact: root.compact;
-            clicked => { root.navigate("Pen"); }
-        }
-        NavItem {
-            icon: "plugins";
-            label: "Plugins";
-            selected: root.active-page == "Plugins";
-            compact: root.compact;
-            clicked => { root.navigate("Plugins"); }
-        }
-        NavItem {
-            icon: "profiles";
-            label: "Profiles";
-            selected: root.active-page == "Profiles";
-            compact: root.compact;
-            clicked => { root.navigate("Profiles"); }
         }
         NavItem {
             icon: "settings";
             label: "Settings";
             selected: root.active-page == "Settings";
             compact: root.compact;
+            enabled: root.interactive;
             clicked => { root.navigate("Settings"); }
         }
 
         Rectangle { vertical-stretch: 1; }
 
+        Rectangle {
+            height: root.compact ? 42px : 56px;
+            border-radius: 14px;
+            background: AppTheme.surface;
+            border-width: 1px;
+            border-color: AppTheme.line;
+            HorizontalLayout {
+                padding-left: root.compact ? 0px : 12px;
+                padding-right: root.compact ? 0px : 12px;
+                spacing: 10px;
+                alignment: root.compact ? center : start;
+                cross-axis-alignment: center;
+                Rectangle {
+                    width: 9px;
+                    height: 9px;
+                    border-radius: 5px;
+                    background: root.backend-state == "ready" || root.backend-state == "daemon-running" || root.backend-state == "no-tablet" ? AppTheme.success : (root.backend-state == "daemon-not-running" ? AppTheme.danger : AppTheme.warning);
+                }
+                if !root.compact: VerticalLayout {
+                    spacing: 2px;
+                    vertical-stretch: 1;
+                    alignment: center;
+                    Text {
+                        text: root.connection-title();
+                        color: AppTheme.text-secondary;
+                        font-size: 11px;
+                        font-weight: 600;
+                    }
+                    Text {
+                        text: root.connection-detail();
+                        color: AppTheme.text-muted;
+                        font-size: 10px;
+                    }
+                }
+            }
+        }
+
         if root.compact || root.overlay: Rectangle {
             height: AppTheme.nav-height;
-            border-radius: 10px;
-            background: toggle-touch.pressed ? #29313a : (toggle-touch.has-hover ? #20262d : transparent);
+            border-radius: 12px;
+            background: toggle-touch.pressed ? AppTheme.pressed : (toggle-touch.has-hover ? AppTheme.hover : transparent);
+            border-width: toggle-focus.has-focus ? 2px : 0px;
+            border-color: AppTheme.accent-color;
+            forward-focus: toggle-focus;
+            accessible-role: button;
+            accessible-label: root.compact ? "Open navigation" : "Close navigation";
+            accessible-action-default => { toggle-touch.clicked(); }
 
             HorizontalLayout {
                 padding-left: root.compact ? 0px : 11px;
@@ -555,7 +744,7 @@ component Sidebar inherits Rectangle {
                 }
                 if !root.compact: Text {
                     text: "Hide navigation";
-                    color: #b8c1cc;
+                    color: AppTheme.text-secondary;
                     font-size: 13px;
                     font-weight: 450;
                     vertical-alignment: center;
@@ -563,7 +752,20 @@ component Sidebar inherits Rectangle {
             }
 
             toggle-touch := TouchArea {
+                enabled: root.interactive;
                 clicked => { root.toggle-overlay(); }
+            }
+            toggle-focus := FocusScope {
+                x: 0px;
+                width: 0px;
+                enabled: root.interactive;
+                key-pressed(event) => {
+                    if event.text == " " || event.text == "\n" {
+                        toggle-touch.clicked();
+                        return accept;
+                    }
+                    return reject;
+                }
             }
         }
     }
@@ -581,35 +783,39 @@ component PageHeader inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
 
-    height: AppTheme.compact ? 62px : 68px;
+    height: AppTheme.compact ? 64px : 74px;
     HorizontalLayout {
-        spacing: 12px;
+        spacing: 13px;
         cross-axis-alignment: center;
         if root.icon != "": Rectangle {
-            width: 28px;
-            height: 28px;
-            background: transparent;
+            width: 34px;
+            height: 34px;
+            border-radius: 11px;
+            background: AppTheme.accent-soft;
             Icon {
                 name: root.icon;
                 tint: AppTheme.accent-color;
-                x: 5px;
-                y: 5px;
+                x: 8px;
+                y: 8px;
             }
         }
         VerticalLayout {
-            spacing: 3px;
+            spacing: 4px;
             vertical-stretch: 1;
             alignment: center;
             Text {
                 text: root.title;
                 color: AppTheme.text;
-                font-size: 22px;
-                font-weight: 700;
+                font-size: 25px;
+                font-weight: 650;
+                letter-spacing: -0.4px;
+                overflow: elide;
             }
             if root.subtitle != "": Text {
                 text: root.subtitle;
                 color: AppTheme.text-muted;
-                font-size: 12px;
+                font-size: 13px;
+                overflow: elide;
             }
         }
     }
@@ -620,7 +826,7 @@ component SectionHeader inherits Rectangle {
     in property <string> title;
     in property <string> hint;
 
-    height: 34px;
+    height: 40px;
     HorizontalLayout {
         spacing: 9px;
         cross-axis-alignment: center;
@@ -639,14 +845,14 @@ component SectionHeader inherits Rectangle {
             text: root.title;
             color: AppTheme.text-secondary;
             font-size: 14px;
-            font-weight: 650;
+            font-weight: 600;
             vertical-alignment: center;
         }
         Rectangle { horizontal-stretch: 1; }
         if root.hint != "": Text {
             text: root.hint;
-            color: AppTheme.accent-color;
-            font-size: 11px;
+            color: AppTheme.text-muted;
+            font-size: 12px;
             vertical-alignment: center;
         }
     }
@@ -655,12 +861,6 @@ component SectionHeader inherits Rectangle {
 component Divider inherits Rectangle {
     height: 1px;
     background: AppTheme.line;
-}
-
-component AvailabilityHint inherits Text {
-    text: "Not available yet";
-    color: AppTheme.accent-color;
-    font-size: 11px;
 }
 
 component EmptyState inherits Rectangle {
@@ -676,60 +876,119 @@ component EmptyState inherits Rectangle {
 
     background: AppTheme.canvas;
 
-    VerticalLayout {
-        padding-left: root.centered ? 0px : 34px;
-        padding-right: root.centered ? 0px : 34px;
-        padding-top: root.centered ? 0px : 27px;
-        alignment: root.centered ? center : start;
-        cross-axis-alignment: root.centered ? center : start;
-        spacing: 10px;
-
+    HorizontalLayout {
+        Rectangle { horizontal-stretch: 1; }
         Rectangle {
-            width: 46px;
-            height: 46px;
-            border-radius: 23px;
-            background: AppTheme.surface-alt;
-            Icon {
-                name: root.icon;
-                tint: AppTheme.accent-color;
-                x: 14px;
-                y: 14px;
-            }
-        }
+            width: min(parent.width - 48px, 640px);
+            height: 330px;
+            border-radius: 30px;
+            background: AppTheme.surface-shell;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: AppTheme.shadow;
+            drop-shadow-offset-y: 14px;
 
-        Text {
-            text: root.heading;
-            color: AppTheme.text;
-            font-size: 21px;
-            font-weight: 700;
-            horizontal-alignment: root.centered ? center : left;
-        }
-        Text {
-            text: root.message;
-            color: AppTheme.text-secondary;
-            font-size: 14px;
-            horizontal-alignment: root.centered ? center : left;
-        }
-        if root.detail != "": Text {
-            text: root.detail;
-            color: AppTheme.text-muted;
-            font-size: 12px;
-            horizontal-alignment: root.centered ? center : left;
-        }
-        Rectangle { height: 7px; }
-        HorizontalLayout {
-            spacing: 8px;
-            alignment: center;
-            if root.primary-label != "": AppButton {
-                label: root.primary-label;
-                primary: true;
-                clicked => { root.primary-clicked(); }
+            Rectangle {
+                x: 5px;
+                y: 5px;
+                width: parent.width - 10px;
+                height: parent.height - 10px;
+                border-radius: 25px;
+                background: AppTheme.surface-raised;
+                border-width: 1px;
+                border-color: AppTheme.line;
+
+                VerticalLayout {
+                    padding-left: 42px;
+                    padding-right: 42px;
+                    padding-top: 38px;
+                    padding-bottom: 38px;
+                    alignment: center;
+                    cross-axis-alignment: center;
+                    spacing: 10px;
+
+                    Rectangle {
+                        width: 54px;
+                        height: 54px;
+                        border-radius: 18px;
+                        background: AppTheme.accent-soft;
+                        Icon {
+                            name: root.icon;
+                            tint: AppTheme.accent-color;
+                            x: 18px;
+                            y: 18px;
+                        }
+                    }
+
+                    Rectangle { height: 4px; }
+                    Text {
+                        text: root.heading;
+                        color: AppTheme.text;
+                        font-size: 24px;
+                        font-weight: 650;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.message;
+                        color: AppTheme.text-secondary;
+                        font-size: 15px;
+                        horizontal-alignment: center;
+                    }
+                    if root.detail != "": Text {
+                        text: root.detail;
+                        color: AppTheme.text-muted;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { height: 8px; }
+                    HorizontalLayout {
+                        spacing: 9px;
+                        alignment: center;
+                        if root.primary-label != "": AppButton {
+                            label: root.primary-label;
+                            primary: true;
+                            clicked => { root.primary-clicked(); }
+                        }
+                        if root.secondary-label != "": AppButton {
+                            label: root.secondary-label;
+                            primary: false;
+                            clicked => { root.secondary-clicked(); }
+                        }
+                    }
+                }
             }
-            if root.secondary-label != "": AppButton {
-                label: root.secondary-label;
-                primary: false;
-                clicked => { root.secondary-clicked(); }
-            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+}
+
+component StatusPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> positive: true;
+    in property <bool> danger: false;
+
+    width: 146px;
+    height: 30px;
+    border-radius: 15px;
+    background: root.danger ? AppTheme.danger-soft : (root.positive ? AppTheme.success-soft : AppTheme.accent-soft);
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 12px;
+        spacing: 8px;
+        cross-axis-alignment: center;
+        Rectangle {
+            width: 7px;
+            height: 7px;
+            border-radius: 4px;
+            background: root.danger ? AppTheme.danger : (root.positive ? AppTheme.success : AppTheme.accent-color);
+        }
+        Text {
+            text: root.label;
+            color: root.danger ? AppTheme.danger : (root.positive ? AppTheme.success : AppTheme.text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            vertical-alignment: center;
         }
     }
 }
@@ -737,43 +996,107 @@ component EmptyState inherits Rectangle {
 component DeviceAction inherits Rectangle {
     in property <string> icon: "";
     in property <string> label;
+    in property <string> detail;
     callback clicked();
 
-    width: 300px;
-    height: 46px;
-    border-radius: 12px;
-    background: touch.pressed ? AppTheme.accent-soft : (touch.has-hover ? AppTheme.surface-alt : AppTheme.surface);
+    min-width: 250px;
+    horizontal-stretch: 1;
+    height: 92px;
+    border-radius: 22px;
+    background: AppTheme.surface-shell;
     border-width: 1px;
-    border-color: AppTheme.line;
+    border-color: action-focus.has-focus ? AppTheme.accent-color : AppTheme.line;
+    transform-origin: { x: root.width / 2, y: root.height / 2 };
+    transform-scale-x: touch.pressed ? 98% : 100%;
+    transform-scale-y: touch.pressed ? 98% : 100%;
+    forward-focus: action-focus;
+    accessible-role: button;
+    accessible-label: root.label + ". " + root.detail;
+    accessible-action-default => { touch.clicked(); }
+    animate transform-scale-x, transform-scale-y, border-color {
+        duration: AppTheme.reduce-motion ? 80ms : 200ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
+    }
 
-    HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 12px;
-        spacing: 10px;
-        cross-axis-alignment: center;
-        if root.icon != "": Icon {
-            name: root.icon;
-            tint: AppTheme.accent-color;
-            width: 20px;
-            height: 20px;
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: parent.width - 8px;
+        height: parent.height - 8px;
+        border-radius: 18px;
+        background: touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : AppTheme.surface-raised);
+        animate background {
+            duration: AppTheme.reduce-motion ? 80ms : 180ms;
+            easing: cubic-bezier(0.32, 0.72, 0, 1);
         }
-        Text {
-            text: root.label;
-            color: AppTheme.text-secondary;
-            font-size: 13px;
-            horizontal-stretch: 1;
-            vertical-alignment: center;
-        }
-        Text {
-            text: ">";
-            color: AppTheme.text-muted;
-            font-size: 16px;
-            vertical-alignment: center;
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 14px;
+            spacing: 13px;
+            cross-axis-alignment: center;
+            Rectangle {
+                width: 42px;
+                height: 42px;
+                border-radius: 14px;
+                background: AppTheme.accent-soft;
+                if root.icon != "": Icon {
+                    name: root.icon;
+                    tint: AppTheme.accent-color;
+                    x: 12px;
+                    y: 12px;
+                }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                alignment: center;
+                Text {
+                    text: root.label;
+                    color: AppTheme.text;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.detail;
+                    color: AppTheme.text-muted;
+                    font-size: 12px;
+                    overflow: elide;
+                }
+            }
+            Rectangle {
+                width: 30px;
+                height: 30px;
+                border-radius: 15px;
+                background: AppTheme.surface-alt;
+                Text {
+                    text: "›";
+                    color: AppTheme.text-secondary;
+                    font-size: 20px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                    y: -1px;
+                }
+            }
         }
     }
 
     touch := TouchArea {
         clicked => { root.clicked(); }
+    }
+
+    action-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
     }
 }
 
@@ -781,115 +1104,181 @@ component DeviceOverview inherits Rectangle {
     in property <string> device-name;
     in property <string> active-profile;
     callback configure-area();
-    callback open-pen();
-    callback open-bindings();
+    callback open-settings();
 
     background: AppTheme.canvas;
 
-    VerticalLayout {
-        alignment: center;
-        cross-axis-alignment: center;
-        spacing: 8px;
+    ScrollView {
+        width: parent.width;
+        height: parent.height;
+        viewport-width: parent.width;
+        viewport-height: max(parent.height, 690px);
 
-        Text {
-            text: root.device-name;
-            color: AppTheme.text;
-            font-size: 24px;
-            font-weight: 700;
-            horizontal-alignment: center;
-        }
-        if root.active-profile != "": Text {
-            text: "Active profile  /  " + root.active-profile;
-            color: AppTheme.text-muted;
-            font-size: 12px;
-            horizontal-alignment: center;
-        }
-        Rectangle { height: 18px; }
-        DeviceAction {
-            icon: "area";
-            label: "Configure area";
-            clicked => { root.configure-area(); }
-        }
-        DeviceAction {
-            icon: "pen";
-            label: "Pen";
-            clicked => { root.open-pen(); }
-        }
-        DeviceAction {
-            icon: "buttons";
-            label: "Bindings";
-            clicked => { root.open-bindings(); }
-        }
-    }
-}
+        HorizontalLayout {
+            width: parent.width;
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                width: min(parent.width - 48px, 1040px);
+                padding-top: 24px;
+                padding-bottom: 42px;
+                spacing: 18px;
 
-component ValueRow inherits Rectangle {
-    in property <string> icon: "";
-    in property <string> label;
-    in property <string> value;
-    in property <bool> enabled: true;
-    in property <bool> interactive: false;
-    in property <bool> show-chevron: false;
-    callback clicked();
+                PageHeader {
+                    icon: "home";
+                    title: "Overview";
+                    subtitle: "Your tablet and its active configuration";
+                }
 
-    height: AppTheme.row-height;
-    opacity: root.enabled ? 1.0 : 0.43;
-    background: touch.pressed && root.enabled && root.interactive ? AppTheme.accent-soft : (touch.has-hover && root.enabled && root.interactive ? AppTheme.surface-alt : transparent);
+                Rectangle {
+                    height: 286px;
+                    border-radius: 30px;
+                    background: AppTheme.surface-shell;
+                    drop-shadow-blur: 34px;
+                    drop-shadow-color: AppTheme.shadow;
+                    drop-shadow-offset-y: 16px;
 
-    HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
-        spacing: 12px;
-        cross-axis-alignment: center;
-        if root.icon != "": Icon {
-            name: root.icon;
-            tint: root.enabled ? AppTheme.icon : #687481;
-            width: 20px;
-            height: 20px;
-        }
-        Text {
-            text: root.label;
-            color: AppTheme.text-secondary;
-            font-size: 13px;
-            horizontal-stretch: 1;
-            vertical-alignment: center;
-        }
-        if root.value != "": Text {
-            text: root.value;
-            color: AppTheme.text-muted;
-            font-size: 12px;
-            vertical-alignment: center;
-        }
-        if root.show-chevron && root.interactive: Text {
-            text: ">";
-            color: AppTheme.text-muted;
-            font-size: 16px;
-            vertical-alignment: center;
-        }
-    }
+                    Rectangle {
+                        x: 5px;
+                        y: 5px;
+                        width: parent.width - 10px;
+                        height: parent.height - 10px;
+                        border-radius: 25px;
+                        background: AppTheme.hero-fill;
+                        border-width: 1px;
+                        border-color: AppTheme.line;
 
-    touch := TouchArea {
-        enabled: root.enabled && root.interactive;
-        clicked => { root.clicked(); }
+                        HorizontalLayout {
+                            padding-left: 34px;
+                            padding-right: 32px;
+                            padding-top: 30px;
+                            padding-bottom: 30px;
+                            spacing: 28px;
+
+                            VerticalLayout {
+                                min-width: 270px;
+                                horizontal-stretch: 3;
+                                spacing: 9px;
+                                alignment: center;
+                                cross-axis-alignment: start;
+
+                                StatusPill { label: "Tablet connected"; positive: true; }
+                                Rectangle { height: 5px; }
+                                Text {
+                                    text: root.device-name;
+                                    color: AppTheme.text;
+                                    font-size: 28px;
+                                    font-weight: 650;
+                                    letter-spacing: -0.7px;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: root.active-profile == "" ? "OpenTabletDriver is connected and ready." : "Profile: " + root.active-profile;
+                                    color: AppTheme.text-muted;
+                                    font-size: 13px;
+                                    wrap: word-wrap;
+                                }
+                                Rectangle { height: 8px; }
+                                AppButton {
+                                    label: "Configure active area";
+                                    primary: true;
+                                    button-width: 176px;
+                                    clicked => { root.configure-area(); }
+                                }
+                            }
+
+                            Rectangle {
+                                min-width: 280px;
+                                horizontal-stretch: 2;
+                                height: 190px;
+                                border-radius: 26px;
+                                background: AppTheme.surface-shell;
+                                border-width: 1px;
+                                border-color: AppTheme.line-strong;
+                                drop-shadow-blur: 22px;
+                                drop-shadow-color: AppTheme.shadow;
+                                drop-shadow-offset-y: 10px;
+
+                                Rectangle {
+                                    x: 12px;
+                                    y: 12px;
+                                    width: parent.width - 24px;
+                                    height: parent.height - 24px;
+                                    border-radius: 18px;
+                                    background: AppTheme.surface-alt;
+                                    border-width: 1px;
+                                    border-color: AppTheme.line;
+
+                                    Rectangle {
+                                        x: 18px;
+                                        y: 18px;
+                                        width: parent.width - 36px;
+                                        height: parent.height - 36px;
+                                        border-radius: 13px;
+                                        background: AppTheme.accent-soft;
+                                        border-width: 1px;
+                                        border-color: AppTheme.accent-color;
+                                        Text {
+                                            text: "ACTIVE AREA";
+                                            color: AppTheme.accent-color;
+                                            font-size: 10px;
+                                            font-weight: 700;
+                                            letter-spacing: 1.1px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { height: 5px; }
+                SectionHeader { title: "Quick controls"; hint: ""; }
+                HorizontalLayout {
+                    spacing: 14px;
+                    DeviceAction {
+                        icon: "area";
+                        label: "Active area";
+                        detail: "Size, position and rotation";
+                        clicked => { root.configure-area(); }
+                    }
+                    DeviceAction {
+                        icon: "settings";
+                        label: "App settings";
+                        detail: "Appearance and startup";
+                        clicked => { root.open-settings(); }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
     }
 }
 
 component NumericField inherits Rectangle {
     in property <string> label;
+    in property <string> suffix;
     in-out property <string> value;
     in property <bool> enabled: true;
+    in property <bool> valid: true;
+    callback edited();
 
-    height: AppTheme.row-height;
-    border-radius: 10px;
-    background: root.enabled ? AppTheme.surface : transparent;
-    border-width: root.enabled ? 1px : 0px;
-    border-color: AppTheme.line;
+    height: AppTheme.compact ? 48px : 54px;
+    border-radius: 14px;
+    background: root.enabled ? AppTheme.surface-raised : transparent;
+    border-width: 1px;
+    border-color: root.enabled ? AppTheme.line : transparent;
     opacity: root.enabled ? 1.0 : 0.43;
 
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 10px;
-        spacing: 10px;
+        padding-left: 14px;
+        padding-right: 11px;
+        spacing: 12px;
         cross-axis-alignment: center;
 
         Text {
@@ -900,23 +1289,44 @@ component NumericField inherits Rectangle {
             vertical-alignment: center;
         }
 
-        Rectangle {
-            width: 100px;
-            height: 30px;
-            border-radius: 7px;
+        input-shell := Rectangle {
+            width: 126px;
+            height: 34px;
+            border-radius: 10px;
             background: AppTheme.canvas;
+            border-width: 1px;
+            border-color: !root.valid ? AppTheme.danger : (numeric-input.has-focus ? AppTheme.accent-color : AppTheme.line);
+            animate border-color {
+                duration: AppTheme.reduce-motion ? 80ms : 160ms;
+                easing: cubic-bezier(0.32, 0.72, 0, 1);
+            }
 
-            TextInput {
+            numeric-input := TextInput {
                 text <=> root.value;
                 enabled: root.enabled;
                 color: AppTheme.text;
-                font-size: 12px;
+                selection-background-color: AppTheme.accent-soft;
+                font-size: 13px;
                 horizontal-alignment: right;
                 vertical-alignment: center;
                 single-line: true;
                 x: 8px;
-                width: parent.width - 16px;
+                width: parent.width - (root.suffix == "" ? 16px : 42px);
                 height: parent.height;
+                accessible-label: root.label + (root.suffix == "" ? "" : " in " + root.suffix);
+                accessible-description: root.valid ? "Enter a numeric value." : "Invalid value. Enter a number.";
+                edited => { root.edited(); }
+            }
+            if root.suffix != "": Text {
+                text: root.suffix;
+                color: root.valid ? AppTheme.text-muted : AppTheme.danger;
+                font-size: 11px;
+                font-weight: 600;
+                x: parent.width - 30px;
+                width: 22px;
+                height: parent.height;
+                horizontal-alignment: right;
+                vertical-alignment: center;
             }
         }
     }
@@ -929,9 +1339,9 @@ component SwitchVisual inherits Rectangle {
     width: 42px;
     height: 26px;
     border-radius: 13px;
-    background: root.checked ? AppTheme.accent-color : #2b333c;
+    background: root.checked ? AppTheme.accent-color : AppTheme.surface-alt;
     border-width: 1px;
-    border-color: root.checked ? AppTheme.accent-color : #47525e;
+    border-color: root.checked ? AppTheme.accent-color : AppTheme.line-strong;
     opacity: root.enabled ? 1.0 : 0.55;
 
     Rectangle {
@@ -940,8 +1350,18 @@ component SwitchVisual inherits Rectangle {
         width: 18px;
         height: 18px;
         border-radius: 9px;
-        background: root.checked ? AppTheme.accent-on : #aab4c0;
-        animate x { duration: AppTheme.reduce-motion ? 0ms : 120ms; }
+        background: root.checked ? AppTheme.accent-on : AppTheme.icon;
+        drop-shadow-blur: 4px;
+        drop-shadow-color: AppTheme.shadow;
+        drop-shadow-offset-y: 2px;
+        animate x {
+            duration: AppTheme.reduce-motion ? 80ms : 200ms;
+            easing: cubic-bezier(0.32, 0.72, 0, 1);
+        }
+    }
+    animate background, border-color {
+        duration: AppTheme.reduce-motion ? 80ms : 180ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
     }
 }
 
@@ -956,7 +1376,21 @@ component SwitchRow inherits Rectangle {
     height: root.description == "" ? AppTheme.row-height : (AppTheme.compact ? 56px : 62px);
     border-radius: 15px;
     opacity: root.enabled ? 1.0 : 0.43;
-    background: touch.pressed && root.enabled ? AppTheme.accent-soft : (touch.has-hover && root.enabled ? AppTheme.surface-alt : transparent);
+    background: touch.pressed && root.enabled ? AppTheme.pressed : (touch.has-hover && root.enabled ? AppTheme.hover : transparent);
+    border-width: switch-focus.has-focus ? 1px : 0px;
+    border-color: AppTheme.accent-color;
+    forward-focus: switch-focus;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-description: root.description;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-action-default => { touch.clicked(); }
+    animate background {
+        duration: AppTheme.reduce-motion ? 80ms : 160ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
+    }
 
     HorizontalLayout {
         padding-left: 12px;
@@ -965,7 +1399,7 @@ component SwitchRow inherits Rectangle {
         cross-axis-alignment: center;
         if root.icon != "": Icon {
             name: root.icon;
-            tint: root.enabled ? AppTheme.icon : #687481;
+            tint: root.enabled ? AppTheme.icon : AppTheme.text-muted;
             width: 20px;
             height: 20px;
         }
@@ -997,6 +1431,19 @@ component SwitchRow inherits Rectangle {
         enabled: root.enabled;
         clicked => { root.toggled(); }
     }
+
+    switch-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 component SegmentButton inherits Rectangle {
@@ -1005,17 +1452,28 @@ component SegmentButton inherits Rectangle {
     in property <bool> enabled: true;
     callback clicked();
 
-    height: AppTheme.compact ? 30px : 32px;
-    width: 76px;
+    height: AppTheme.compact ? 38px : 44px;
+    width: 86px;
     opacity: root.enabled ? 1.0 : 0.43;
     border-radius: 9px;
-    background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed && root.enabled ? #303a46 : (touch.has-hover && root.enabled ? #252d35 : transparent));
-    border-width: root.selected ? 1px : 0px;
-    border-color: AppTheme.accent-color;
+    background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed && root.enabled ? AppTheme.pressed : (touch.has-hover && root.enabled ? AppTheme.hover : transparent));
+    border-width: root.selected || segment-focus.has-focus ? 1px : 0px;
+    border-color: segment-focus.has-focus ? AppTheme.accent-color : AppTheme.line-strong;
+    forward-focus: segment-focus;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => { touch.clicked(); }
+    animate background, border-color {
+        duration: AppTheme.reduce-motion ? 80ms : 160ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
+    }
 
     Text {
         text: root.label;
-        color: root.selected ? AppTheme.text : #b5c0cb;
+        color: root.selected ? AppTheme.text : AppTheme.text-secondary;
         font-size: 12px;
         font-weight: root.selected ? 650 : 450;
         horizontal-alignment: center;
@@ -1028,63 +1486,237 @@ component SegmentButton inherits Rectangle {
         enabled: root.enabled;
         clicked => { root.clicked(); }
     }
-}
 
-component SectionTabs inherits Rectangle {
-    in property <string> active-tab;
-    callback select-tab(string);
-
-    height: 34px;
-    HorizontalLayout {
-        spacing: 2px;
-        SegmentButton {
-            label: "Installed";
-            selected: root.active-tab == "Installed";
-            enabled: true;
-            clicked => { root.select-tab("Installed"); }
-        }
-        SegmentButton {
-            label: "Available";
-            selected: root.active-tab == "Available";
-            enabled: true;
-            clicked => { root.select-tab("Available"); }
+    segment-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
         }
     }
 }
 
 component ColorOption inherits Rectangle {
+    in property <string> label;
     in property <color> swatch;
     in property <bool> selected;
     in property <bool> enabled: true;
     callback clicked();
 
-    width: 25px;
-    height: 25px;
-    border-radius: 13px;
-    background: root.swatch;
-    opacity: root.enabled ? (touch.pressed ? 0.75 : 1.0) : 0.42;
-    border-width: root.selected ? 3px : 1px;
-    border-color: root.selected ? AppTheme.accent-color : AppTheme.line;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : transparent);
+    opacity: root.enabled ? 1.0 : 0.42;
+    border-width: color-focus.has-focus ? 1px : 0px;
+    border-color: AppTheme.accent-color;
+    forward-focus: color-focus;
+    accessible-role: radio-button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => { touch.clicked(); }
+
+    Rectangle {
+        x: 9px;
+        y: 9px;
+        width: 26px;
+        height: 26px;
+        border-radius: 13px;
+        background: root.swatch;
+        border-width: 1px;
+        border-color: root.selected ? AppTheme.text : AppTheme.line-strong;
+        if root.selected: Rectangle {
+            // The marker sits inside the swatch, leaving a deliberate color edge
+            // visible so the selected state reads as a ring instead of a dot.
+            x: 4px;
+            y: 4px;
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            border-width: 2px;
+            border-color: AppTheme.accent-on;
+            background: transparent;
+        }
+    }
 
     touch := TouchArea {
         enabled: root.enabled;
         clicked => { root.clicked(); }
     }
+
+    color-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component HsvColorPicker inherits Rectangle {
+    in-out property <float> hue: 212;
+    in-out property <float> saturation: 0.42;
+    in-out property <float> value: 0.86;
+    in property <string> label: "Custom color";
+    callback changed();
+
+    width: 286px;
+    height: 214px;
+    border-radius: 18px;
+    background: AppTheme.surface-alt;
+    border-width: 1px;
+    border-color: AppTheme.line;
+
+    function set-plane-position(px: length, py: length) {
+        root.saturation = max(0, min(1, px / picker-plane.width));
+        root.value = max(0, min(1, 1 - (py / picker-plane.height)));
+        root.changed();
+    }
+
+    function set-hue-position(px: length) {
+        root.hue = max(0, min(360, px / hue-strip.width * 360));
+        root.changed();
+    }
+
+    Text {
+        text: root.label;
+        x: 14px;
+        y: 10px;
+        color: AppTheme.text-muted;
+        font-size: 10px;
+        font-weight: 650;
+        letter-spacing: 0.6px;
+    }
+
+    picker-plane := Rectangle {
+        x: 14px;
+        y: 32px;
+        width: parent.width - 28px;
+        height: 116px;
+        border-radius: 10px;
+        clip: true;
+        background: @linear-gradient(90deg, #ffffff 0%, Colors.hsv(root.hue, 1, 1) 100%);
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: @linear-gradient(0deg, #000000 0%, #00000000 100%);
+        }
+        marker := Rectangle {
+            x: max(1px, min(parent.width - 17px, root.saturation * parent.width - 8px));
+            y: max(1px, min(parent.height - 17px, (1 - root.value) * parent.height - 8px));
+            width: 16px;
+            height: 16px;
+            border-radius: 9px;
+            border-width: 2px;
+            border-color: #ffffff;
+            background: transparent;
+            drop-shadow-blur: 3px;
+            drop-shadow-color: #00000066;
+            drop-shadow-offset-y: 1px;
+        }
+        plane-touch := TouchArea {
+            mouse-cursor: grab;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind != PointerEventKind.up {
+                    root.set-plane-position(self.mouse-x, self.mouse-y);
+                }
+            }
+            moved => {
+                root.set-plane-position(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+
+    hue-strip := Rectangle {
+        x: 14px;
+        y: 160px;
+        width: parent.width - 28px;
+        height: 12px;
+        border-radius: 6px;
+        background: @linear-gradient(90deg,
+            #f04d5d 0%, #f39c4a 16%, #e6db61 32%, #76c87c 48%,
+            #55c2c1 64%, #6d96df 80%, #bd78d7 92%, #f04d5d 100%);
+        hue-touch := TouchArea {
+            mouse-cursor: ew-resize;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind != PointerEventKind.up {
+                    root.set-hue-position(self.mouse-x);
+                }
+            }
+            moved => {
+                root.set-hue-position(self.mouse-x);
+            }
+        }
+        Rectangle {
+            x: max(1px, min(parent.width - 5px, root.hue / 360 * parent.width - 3px));
+            y: -2px;
+            width: 6px;
+            height: parent.height + 4px;
+            border-radius: 4px;
+            border-width: 2px;
+            border-color: AppTheme.surface-raised;
+            background: transparent;
+        }
+    }
+
+    HorizontalLayout {
+        x: 14px;
+        y: 184px;
+        width: parent.width - 28px;
+        height: 16px;
+        spacing: 7px;
+        Rectangle {
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: Colors.hsv(root.hue, root.saturation, root.value);
+            border-width: 1px;
+            border-color: AppTheme.line-strong;
+        }
+        Text {
+            text: "H " + root.hue.round() + "°  ·  S " + (root.saturation * 100).round() + "%  ·  V " + (root.value * 100).round() + "%";
+            color: AppTheme.text-muted;
+            font-size: 10px;
+            vertical-alignment: center;
+        }
+    }
 }
 
 component LinkButton inherits Rectangle {
     in property <string> label;
+    in property <bool> enabled: true;
     callback clicked();
 
-    width: 52px;
-    height: 28px;
-    border-radius: 7px;
-    background: touch.pressed ? AppTheme.accent-soft : (touch.has-hover ? AppTheme.surface-alt : transparent);
+    width: 74px;
+    height: 44px;
+    border-radius: 12px;
+    opacity: root.enabled ? 1.0 : 0.42;
+    background: touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : transparent);
+    border-width: link-focus.has-focus ? 1px : 0px;
+    border-color: AppTheme.accent-color;
+    forward-focus: link-focus;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { touch.clicked(); }
 
     Text {
         text: root.label;
         color: AppTheme.accent-color;
-        font-size: 11px;
+        font-size: 12px;
+        font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;
         width: parent.width;
@@ -1092,7 +1724,121 @@ component LinkButton inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: root.enabled;
         clicked => { root.clicked(); }
+    }
+
+    link-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component MonitorOption inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    min-width: 104px;
+    height: 34px;
+    border-radius: 10px;
+    opacity: root.enabled ? 1.0 : 0.42;
+    background: root.selected ? AppTheme.accent-soft : (touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : AppTheme.surface-alt));
+    border-width: root.selected || option-focus.has-focus ? 1px : 0px;
+    border-color: option-focus.has-focus ? AppTheme.accent-color : (root.selected ? AppTheme.accent-color : AppTheme.line);
+    forward-focus: option-focus;
+    accessible-role: radio-button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => { touch.clicked(); }
+    animate background, border-color {
+        duration: AppTheme.reduce-motion ? 80ms : 160ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    Text {
+        text: root.label;
+        x: 9px;
+        width: parent.width - 18px;
+        height: parent.height;
+        color: root.selected ? AppTheme.text : AppTheme.text-secondary;
+        font-size: 11px;
+        font-weight: root.selected ? 650 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    option-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component MonitorPicker inherits Rectangle {
+    in property <[string]> options: [];
+    in-out property <int> selected-index: 0;
+    callback changed();
+
+    height: AppTheme.compact ? 70px : 76px;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 5px;
+        Text {
+            text: "Target display";
+            color: AppTheme.text-secondary;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        Text {
+            text: "Choose where the tablet pointer should appear";
+            color: AppTheme.text-muted;
+            font-size: 10px;
+        }
+        HorizontalLayout {
+            height: 34px;
+            spacing: 6px;
+            for option[index] in root.options: MonitorOption {
+                label: option;
+                selected: root.selected-index == index;
+                width: (parent.width - (root.options.length - 1) * 6px) / max(1, root.options.length);
+                clicked => {
+                    root.selected-index = index;
+                    root.changed();
+                }
+            }
+            if root.options.length == 0: Text {
+                text: "No displays detected";
+                color: AppTheme.text-muted;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
     }
 }
 
@@ -1100,72 +1846,347 @@ component AreaPreview inherits Rectangle {
     in property <bool> has-data;
     in property <float> display-width: 152;
     in property <float> display-height: 95;
+    in property <string> area-width;
+    in property <string> area-height;
+    in-out property <string> area-x;
+    in-out property <string> area-y;
+    in property <string> area-rotation;
+    in property <float> tablet-width: 152;
+    in property <float> tablet-height: 95;
+    in property <bool> values-valid: false;
+    callback position-edited();
 
-    width: 480px;
-    height: (root.width - 64px) * root.display-height / root.display-width + 62px;
-    border-radius: 14px;
-    background: AppTheme.surface;
+    min-width: 300px;
+    max-width: 650px;
+    horizontal-stretch: 3;
+    height: min(380px, max(260px, (root.width - 64px) * root.display-height / root.display-width + 74px));
+    border-radius: 28px;
+    background: AppTheme.surface-shell;
     border-width: 1px;
     border-color: AppTheme.line;
+    drop-shadow-blur: 28px;
+    drop-shadow-color: AppTheme.shadow;
+    drop-shadow-offset-y: 13px;
 
-    Text {
-        text: "TABLET AREA";
-        x: 32px;
-        y: 11px;
-        color: AppTheme.text-muted;
-        font-size: 10px;
-        font-weight: 700;
+    property <bool> dragging: false;
+    property <length> drag-offset-x;
+    property <length> drag-offset-y;
+
+    function update-drag-position() {
+        if !root.dragging || !root.values-valid {
+            return;
+        }
+        let area-px-width = active-area.width;
+        let area-px-height = active-area.height;
+        let area-left = max(0px, min(stage.width - area-px-width, stage-touch.mouse-x - root.drag-offset-x));
+        let area-top = max(0px, min(stage.height - area-px-height, stage-touch.mouse-y - root.drag-offset-y));
+        root.area-x = ((area-left + area-px-width / 2) / stage.width * root.tablet-width) + "";
+        root.area-y = ((area-top + area-px-height / 2) / stage.height * root.tablet-height) + "";
+        root.position-edited();
     }
 
     Rectangle {
-        x: 32px;
-        y: 28px;
-        width: parent.width - 64px;
-        height: parent.height - 62px;
-        border-radius: 10px;
-        background: AppTheme.surface-alt;
+        x: 5px;
+        y: 5px;
+        width: parent.width - 10px;
+        height: parent.height - 10px;
+        border-radius: 23px;
+        background: AppTheme.surface-raised;
         border-width: 1px;
         border-color: AppTheme.line;
 
-        if root.has-data: Rectangle {
-            x: 4px;
-            y: 4px;
-            width: parent.width - 8px;
-            height: parent.height - 8px;
-            border-radius: 7px;
-            background: AppTheme.accent-soft;
-            border-width: 2px;
-            border-color: AppTheme.accent-color;
-            Text {
-                text: "ACTIVE AREA";
-                color: AppTheme.accent-color;
-                font-size: 10px;
-                font-weight: 700;
+        Text {
+            text: "Area shape preview";
+            x: 24px;
+            y: 18px;
+            color: AppTheme.text-secondary;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        Text {
+            text: root.values-valid ? root.area-width + " × " + root.area-height + " mm" : "Current display aspect";
+            x: 24px;
+            y: 39px;
+            color: root.values-valid ? AppTheme.text-muted : AppTheme.danger;
+            font-size: 11px;
+        }
+
+        stage := Rectangle {
+            x: 24px;
+            y: 68px;
+            width: parent.width - 48px;
+            height: parent.height - 94px;
+            border-radius: 18px;
+            background: AppTheme.surface-alt;
+            border-width: 1px;
+            border-color: AppTheme.line-strong;
+            clip: true;
+
+            if root.has-data && root.values-valid: Rectangle {
+                property <float> area-width-ratio: root.area-width.to-float() / max(0.1, root.tablet-width);
+                property <float> area-height-ratio: root.area-height.to-float() / max(0.1, root.tablet-height);
+                width: max(28px, min(parent.width - 8px, parent.width * self.area-width-ratio));
+                height: max(28px, min(parent.height - 8px, parent.height * self.area-height-ratio));
+                x: max(0px, min(parent.width - self.width, (root.area-x.to-float() - root.area-width.to-float() / 2) / max(0.1, root.tablet-width) * parent.width));
+                y: max(0px, min(parent.height - self.height, (root.area-y.to-float() - root.area-height.to-float() / 2) / max(0.1, root.tablet-height) * parent.height));
+                border-radius: 12px;
+                background: root.dragging ? AppTheme.accent-pressed : AppTheme.accent-soft;
+                border-width: 2px;
+                border-color: AppTheme.accent-color;
+                transform-origin: { x: self.width / 2, y: self.height / 2 };
+                transform-rotation: root.area-rotation.is-float() ? root.area-rotation.to-float() * 1deg : 0deg;
+                animate width, height, transform-rotation {
+                    duration: AppTheme.reduce-motion ? 80ms : 260ms;
+                    easing: cubic-bezier(0.32, 0.72, 0, 1);
+                }
+
+                Rectangle {
+                    x: 7px;
+                    y: 7px;
+                    width: parent.width - 14px;
+                    height: parent.height - 14px;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: AppTheme.accent-color;
+                    background: transparent;
+                }
+                Text {
+                    text: "ACTIVE AREA";
+                    color: AppTheme.accent-color;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 1px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+            stage-touch := TouchArea {
+                enabled: root.has-data && root.values-valid;
+                mouse-cursor: root.dragging ? grabbing : grab;
+                pointer-event(event) => {
+                    if event.button != PointerEventButton.left {
+                        return;
+                    }
+                    if event.kind == PointerEventKind.down {
+                        root.dragging = stage-touch.mouse-x >= active-area.x
+                            && stage-touch.mouse-x <= active-area.x + active-area.width
+                            && stage-touch.mouse-y >= active-area.y
+                            && stage-touch.mouse-y <= active-area.y + active-area.height;
+                        if root.dragging {
+                            root.drag-offset-x = stage-touch.mouse-x - active-area.x;
+                            root.drag-offset-y = stage-touch.mouse-y - active-area.y;
+                            stage-focus.focus();
+                        }
+                    } else if event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel {
+                        root.dragging = false;
+                    }
+                }
+                moved => { root.update-drag-position(); }
+            }
+            stage-focus := FocusScope {
+                x: 0px;
+                y: 0px;
+                width: 0px;
+                height: 0px;
+                enabled: root.dragging;
+            }
+            if !root.has-data || !root.values-valid: Text {
+                text: root.has-data ? "Enter valid dimensions to update the preview" : "Area data is unavailable";
+                color: root.has-data ? AppTheme.danger : AppTheme.text-muted;
+                font-size: 12px;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 width: parent.width;
                 height: parent.height;
+                wrap: word-wrap;
             }
         }
-        if !root.has-data: Text {
-            text: "Area data unavailable";
-            color: AppTheme.text-muted;
-            font-size: 12px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
+
+        HorizontalLayout {
+            x: 24px;
+            y: parent.height - 24px;
+            width: parent.width - 48px;
+            height: 14px;
+            spacing: 7px;
+            Rectangle {
+                width: 7px;
+                height: 7px;
+                border-radius: 4px;
+                background: AppTheme.accent-color;
+            }
+            Text {
+                text: root.has-data && root.values-valid ? "Drag the active area to move it · values stay precise." : "Preview uses area proportions.";
+                color: AppTheme.text-muted;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
         }
     }
+}
 
-    Text {
-        text: root.has-data ? "Display proportions" : "Not available yet";
-        color: AppTheme.text-muted;
-        font-size: 11px;
-        horizontal-alignment: center;
-        x: 0px;
-        y: parent.height - 23px;
-        width: parent.width;
+component AreaControls inherits Rectangle {
+    in-out property <string> draft-width;
+    in-out property <string> draft-height;
+    in-out property <string> draft-x;
+    in-out property <string> draft-y;
+    in-out property <string> draft-rotation;
+    in-out property <int> monitor-index: 0;
+    in property <[string]> monitor-options: [];
+    in-out property <bool> dirty;
+    in-out property <string> apply-state;
+    callback edited();
+    callback monitor-edited();
+    callback revert();
+    callback apply();
+    callback refresh();
+
+    out property <bool> width-valid: root.draft-width.is-float() && root.draft-width.to-float() > 0;
+    out property <bool> height-valid: root.draft-height.is-float() && root.draft-height.to-float() > 0;
+    out property <bool> x-valid: root.draft-x.is-float();
+    out property <bool> y-valid: root.draft-y.is-float();
+    out property <bool> rotation-valid: root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360;
+    out property <bool> values-valid: root.width-valid && root.height-valid && root.x-valid && root.y-valid && root.rotation-valid;
+    out property <string> status-text: root.apply-state == "waiting" ? "Waiting for OpenTabletDriver…" : (root.apply-state == "confirmed" ? "Values confirmed by OpenTabletDriver" : (root.apply-state == "unconfirmed" ? "OpenTabletDriver did not confirm the change" : (root.dirty ? (root.values-valid ? "Input checks passed — ready to apply" : "Check the highlighted values") : "Edit a value to enable Apply")));
+
+    min-width: 300px;
+    horizontal-stretch: 2;
+    height: AppTheme.compact ? 512px : 552px;
+    border-radius: 26px;
+    background: AppTheme.surface-shell;
+    border-width: 1px;
+    border-color: AppTheme.line;
+
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: parent.width - 8px;
+        height: parent.height - 8px;
+        border-radius: 22px;
+        background: AppTheme.surface;
+        border-width: 1px;
+        border-color: AppTheme.line;
+
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 14px;
+            padding-bottom: 14px;
+            spacing: 6px;
+
+            HorizontalLayout {
+                height: 38px;
+                cross-axis-alignment: center;
+                Text {
+                    text: "Area values";
+                    color: AppTheme.text;
+                    font-size: 14px;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                LinkButton {
+                    label: "Reload";
+                    enabled: root.apply-state != "waiting";
+                    clicked => { root.refresh(); }
+                }
+            }
+            MonitorPicker {
+                options: root.monitor-options;
+                selected-index <=> root.monitor-index;
+                changed => { root.monitor-edited(); }
+            }
+            NumericField {
+                label: "Width";
+                suffix: "mm";
+                enabled: root.apply-state != "waiting";
+                value <=> root.draft-width;
+                valid: !root.dirty || root.width-valid;
+                edited => { root.edited(); }
+            }
+            NumericField {
+                label: "Height";
+                suffix: "mm";
+                enabled: root.apply-state != "waiting";
+                value <=> root.draft-height;
+                valid: !root.dirty || root.height-valid;
+                edited => { root.edited(); }
+            }
+            NumericField {
+                label: "X position";
+                suffix: "mm";
+                enabled: root.apply-state != "waiting";
+                value <=> root.draft-x;
+                valid: !root.dirty || root.x-valid;
+                edited => { root.edited(); }
+            }
+            NumericField {
+                label: "Y position";
+                suffix: "mm";
+                enabled: root.apply-state != "waiting";
+                value <=> root.draft-y;
+                valid: !root.dirty || root.y-valid;
+                edited => { root.edited(); }
+            }
+            NumericField {
+                label: "Rotation";
+                suffix: "°";
+                enabled: root.apply-state != "waiting";
+                value <=> root.draft-rotation;
+                valid: !root.dirty || root.rotation-valid;
+                edited => { root.edited(); }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+            Rectangle {
+                height: 38px;
+                border-radius: 12px;
+                background: root.apply-state == "confirmed" ? AppTheme.success-soft : (root.apply-state == "unconfirmed" || (root.dirty && !root.values-valid) ? AppTheme.danger-soft : AppTheme.surface-alt);
+                accessible-role: region;
+                accessible-label: "Active area apply status";
+                accessible-description: root.status-text;
+                accessible-live-region: polite;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 9px;
+                    cross-axis-alignment: center;
+                    Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 4px;
+                        background: root.apply-state == "confirmed" ? AppTheme.success : (root.apply-state == "unconfirmed" || (root.dirty && !root.values-valid) ? AppTheme.danger : (root.apply-state == "waiting" ? AppTheme.warning : AppTheme.text-muted));
+                    }
+                    Text {
+                        text: root.status-text;
+                        color: root.apply-state == "confirmed" ? AppTheme.success : (root.apply-state == "unconfirmed" || (root.dirty && !root.values-valid) ? AppTheme.danger : AppTheme.text-muted);
+                        font-size: 11px;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            HorizontalLayout {
+                height: AppTheme.button-height;
+                spacing: 9px;
+                alignment: end;
+                AppButton {
+                    label: "Revert";
+                    primary: false;
+                    enabled: root.dirty && root.apply-state != "waiting";
+                    clicked => { root.revert(); }
+                }
+                AppButton {
+                    label: root.apply-state == "waiting" ? "Applying…" : "Apply changes";
+                    primary: true;
+                    button-width: 154px;
+                    enabled: root.dirty && root.values-valid && root.apply-state != "waiting";
+                    clicked => { root.apply(); }
+                }
+            }
+        }
     }
 }
 
@@ -1174,88 +2195,182 @@ component AreaEditor inherits Rectangle {
     in property <bool> has-data;
     in property <float> display-width: 152;
     in property <float> display-height: 95;
-    in-out property <string> area-width;
-    in-out property <string> area-height;
-    in-out property <string> area-x;
-    in-out property <string> area-y;
-    in-out property <string> area-rotation;
-    property <bool> lock-aspect: false;
+    in property <string> area-width;
+    in property <string> area-height;
+    in property <string> area-x;
+    in property <string> area-y;
+    in property <string> area-rotation;
+    property <string> draft-width: root.area-width;
+    property <string> draft-height: root.area-height;
+    property <string> draft-x: root.area-x;
+    property <string> draft-y: root.area-y;
+    property <string> draft-rotation: root.area-rotation;
+    property <bool> dirty: false;
+    property <string> apply-state: "idle";
+    property <bool> values-valid: root.draft-width.is-float() && root.draft-width.to-float() > 0
+        && root.draft-height.is-float() && root.draft-height.to-float() > 0
+        && root.draft-x.is-float() && root.draft-y.is-float()
+        && root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360;
     callback retry-detection();
     callback apply-area(string, string, string, string, string);
 
+    pure function same-number(a: string, b: string) -> bool {
+        return a.is-float() && b.is-float() && abs(a.to-float() - b.to-float()) < 0.005;
+    }
+
+    function sync-from-source() {
+        if root.apply-state == "waiting" || root.apply-state == "unconfirmed" {
+            if root.same-number(root.area-width, root.draft-width)
+                && root.same-number(root.area-height, root.draft-height)
+                && root.same-number(root.area-x, root.draft-x)
+                && root.same-number(root.area-y, root.draft-y)
+                && root.same-number(root.area-rotation, root.draft-rotation) {
+                root.apply-state = "confirmed";
+                root.dirty = false;
+                apply-timeout.stop();
+            }
+        } else if !root.dirty {
+            root.draft-width = root.area-width;
+            root.draft-height = root.area-height;
+            root.draft-x = root.area-x;
+            root.draft-y = root.area-y;
+            root.draft-rotation = root.area-rotation;
+            root.apply-state = "idle";
+        }
+    }
+
+    function revert-draft() {
+        root.draft-width = root.area-width;
+        root.draft-height = root.area-height;
+        root.draft-x = root.area-x;
+        root.draft-y = root.area-y;
+        root.draft-rotation = root.area-rotation;
+        root.dirty = false;
+        root.apply-state = "idle";
+        apply-timeout.stop();
+    }
+
+    changed area-width => { root.sync-from-source(); }
+    changed area-height => { root.sync-from-source(); }
+    changed area-x => { root.sync-from-source(); }
+    changed area-y => { root.sync-from-source(); }
+    changed area-rotation => { root.sync-from-source(); }
+    changed device-name => { root.revert-draft(); }
+
+    apply-timeout := Timer {
+        interval: 6s;
+        running: false;
+        triggered => {
+            self.running = false;
+            if root.apply-state == "waiting" {
+                root.apply-state = "unconfirmed";
+            }
+        }
+    }
+
     background: AppTheme.canvas;
 
-    VerticalLayout {
-        padding-left: 34px;
-        padding-right: 34px;
-        padding-top: 27px;
-        padding-bottom: 27px;
-        spacing: 17px;
-
-        PageHeader {
-            icon: "area";
-            title: "Area";
-            subtitle: root.device-name;
-        }
+    ScrollView {
+        width: parent.width;
+        height: parent.height;
+        viewport-width: parent.width;
+        viewport-height: root.width < 860px ? 1060px : max(parent.height, 690px);
 
         HorizontalLayout {
-            spacing: 20px;
-            vertical-stretch: 1;
+            width: parent.width;
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                width: min(parent.width - 44px, 1120px);
+                padding-top: 20px;
+                padding-bottom: 36px;
+                spacing: 18px;
 
-            AreaPreview {
-                has-data: root.has-data;
-                display-width: root.display-width;
-                display-height: root.display-height;
-            }
+                PageHeader {
+                    icon: "area";
+                    title: "Active area";
+                    subtitle: root.device-name;
+                }
 
-            Rectangle {
-                horizontal-stretch: 2;
-                VerticalLayout {
-                    spacing: 3px;
-                    SectionHeader {
-                        icon: "area";
-                        title: "Active area";
-                        hint: root.has-data ? "" : "Not available yet";
+                if root.width >= 860px: HorizontalLayout {
+                    spacing: 18px;
+                    AreaPreview {
+                        has-data: root.has-data;
+                        display-width: root.display-width;
+                        display-height: root.display-height;
+                        area-width: root.draft-width;
+                        area-height: root.draft-height;
+                        area-rotation: root.draft-rotation;
+                        values-valid: root.values-valid;
                     }
-                    NumericField { label: "Width"; value <=> root.area-width; enabled: root.has-data; }
-                    Divider {}
-                    NumericField { label: "Height"; value <=> root.area-height; enabled: root.has-data; }
-                    Divider {}
-                    NumericField { label: "X"; value <=> root.area-x; enabled: root.has-data; }
-                    Divider {}
-                    NumericField { label: "Y"; value <=> root.area-y; enabled: root.has-data; }
-                    Divider {}
-                    NumericField { label: "Rotation"; value <=> root.area-rotation; enabled: root.has-data; }
-                    Divider {}
-                    SwitchRow {
-                        icon: "lock";
-                        label: "Lock aspect ratio";
-                        description: "Keep width and height proportional";
-                        checked: root.lock-aspect;
-                        enabled: root.has-data;
-                        toggled => { root.lock-aspect = !root.lock-aspect; }
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        AppButton { label: "Center"; primary: false; enabled: false; }
-                        AppButton { label: "Full area"; primary: false; enabled: false; }
-                        AppButton {
-                            label: "Apply";
-                            primary: true;
-                            enabled: root.has-data;
-                            clicked => { root.apply-area(root.area-width, root.area-height, root.area-x, root.area-y, root.area-rotation); }
+                    AreaControls {
+                        draft-width <=> root.draft-width;
+                        draft-height <=> root.draft-height;
+                        draft-x <=> root.draft-x;
+                        draft-y <=> root.draft-y;
+                        draft-rotation <=> root.draft-rotation;
+                        dirty <=> root.dirty;
+                        apply-state <=> root.apply-state;
+                        edited => { root.dirty = true; root.apply-state = "idle"; }
+                        revert => { root.revert-draft(); }
+                        refresh => { root.revert-draft(); root.retry-detection(); }
+                        apply => {
+                            root.apply-state = "waiting";
+                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation);
+                            if root.same-number(root.area-width, root.draft-width)
+                                && root.same-number(root.area-height, root.draft-height)
+                                && root.same-number(root.area-x, root.draft-x)
+                                && root.same-number(root.area-y, root.draft-y)
+                                && root.same-number(root.area-rotation, root.draft-rotation) {
+                                root.apply-state = "confirmed";
+                                root.dirty = false;
+                            } else {
+                                apply-timeout.start();
+                            }
                         }
                     }
-                    if !root.has-data: AvailabilityHint {}
-                    Rectangle { vertical-stretch: 1; }
-                    AppButton {
-                        label: "Retry detection";
-                        primary: false;
-                        enabled: true;
-                        clicked => { root.retry-detection(); }
+                }
+
+                if root.width < 860px: VerticalLayout {
+                    spacing: 16px;
+                    AreaPreview {
+                        has-data: root.has-data;
+                        display-width: root.display-width;
+                        display-height: root.display-height;
+                        area-width: root.draft-width;
+                        area-height: root.draft-height;
+                        area-rotation: root.draft-rotation;
+                        values-valid: root.values-valid;
+                    }
+                    AreaControls {
+                        draft-width <=> root.draft-width;
+                        draft-height <=> root.draft-height;
+                        draft-x <=> root.draft-x;
+                        draft-y <=> root.draft-y;
+                        draft-rotation <=> root.draft-rotation;
+                        dirty <=> root.dirty;
+                        apply-state <=> root.apply-state;
+                        edited => { root.dirty = true; root.apply-state = "idle"; }
+                        revert => { root.revert-draft(); }
+                        refresh => { root.revert-draft(); root.retry-detection(); }
+                        apply => {
+                            root.apply-state = "waiting";
+                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation);
+                            if root.same-number(root.area-width, root.draft-width)
+                                && root.same-number(root.area-height, root.draft-height)
+                                && root.same-number(root.area-x, root.draft-x)
+                                && root.same-number(root.area-y, root.draft-y)
+                                && root.same-number(root.area-rotation, root.draft-rotation) {
+                                root.apply-state = "confirmed";
+                                root.dirty = false;
+                            } else {
+                                apply-timeout.start();
+                            }
+                        }
                     }
                 }
+                Rectangle { vertical-stretch: 1; }
             }
+            Rectangle { horizontal-stretch: 1; }
         }
     }
 }
@@ -1265,24 +2380,26 @@ component AreaPage inherits Rectangle {
     in property <string> device-name;
     in property <float> display-width: 152;
     in property <float> display-height: 95;
-    in-out property <string> area-width;
-    in-out property <string> area-height;
-    in-out property <string> area-x;
-    in-out property <string> area-y;
-    in-out property <string> area-rotation;
+    in property <string> area-width;
+    in property <string> area-height;
+    in property <string> area-x;
+    in property <string> area-y;
+    in property <string> area-rotation;
     callback retry-detection();
+    callback start-driver();
     callback apply-area(string, string, string, string, string, string);
 
-    if root.backend-state == "ready" && root.device-name != "": AreaEditor {
+    AreaEditor {
+        visible: root.backend-state == "ready" && root.device-name != "";
         device-name: root.device-name;
-        has-data: root.area-width != "" && root.area-height != "";
+        has-data: root.area-width != "" && root.area-height != "" && root.area-x != "" && root.area-y != "" && root.area-rotation != "";
         display-width: root.display-width;
         display-height: root.display-height;
-        area-width <=> root.area-width;
-        area-height <=> root.area-height;
-        area-x <=> root.area-x;
-        area-y <=> root.area-y;
-        area-rotation <=> root.area-rotation;
+        area-width: root.area-width;
+        area-height: root.area-height;
+        area-x: root.area-x;
+        area-y: root.area-y;
+        area-rotation: root.area-rotation;
         retry-detection => { root.retry-detection(); }
         apply-area(width, height, x, y, rotation) => {
             root.apply-area(root.device-name, width, height, x, y, rotation);
@@ -1291,263 +2408,13 @@ component AreaPage inherits Rectangle {
     if root.backend-state != "ready" || root.device-name == "": EmptyState {
         icon: "area";
         centered: false;
-        heading: "Area";
-        message: root.backend-state == "daemon-not-running" ? "OpenTabletDriver is not running" : (root.backend-state == "daemon-starting" ? "Starting OpenTabletDriver" : (root.backend-state == "daemon-running" ? "Waiting for tablet detection" : (root.backend-state == "unknown" ? "Waiting for tablet detection" : "No tablet connected")));
-        detail: root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver to detect a tablet." : (root.backend-state == "daemon-starting" ? "Retry in a moment." : "Connect a tablet to configure its active area.");
-        primary-label: "";
-        secondary-label: "Retry detection";
+        heading: "Active area";
+        message: root.backend-state == "daemon-not-running" ? "The tablet driver is offline" : (root.backend-state == "daemon-starting" ? "Starting the tablet driver" : (root.backend-state == "daemon-running" ? "Waiting for a tablet" : (root.backend-state == "unknown" ? "Checking OpenTabletDriver" : "No tablet connected")));
+        detail: root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver to detect and configure your tablet." : (root.backend-state == "daemon-starting" ? "This usually takes a few seconds." : "Connect a supported tablet, then check again.");
+        primary-label: root.backend-state == "daemon-not-running" ? "Start driver" : "";
+        secondary-label: root.backend-state == "daemon-starting" ? "" : "Check again";
+        primary-clicked => { root.start-driver(); }
         secondary-clicked => { root.retry-detection(); }
-    }
-}
-
-component PressureCurvePreview inherits Rectangle {
-    in property <bool> enabled;
-
-    height: 142px;
-    border-radius: 12px;
-    background: AppTheme.surface;
-    border-width: 1px;
-    border-color: AppTheme.line;
-    opacity: root.enabled ? 1.0 : 0.55;
-
-    Text {
-        text: root.enabled ? "Pressure curve" : "Not available yet";
-        color: root.enabled ? AppTheme.text-secondary : AppTheme.text-muted;
-        font-size: 12px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
-    }
-}
-
-component PressureTestArea inherits Rectangle {
-    in property <bool> enabled;
-
-    height: 90px;
-    border-radius: 12px;
-    background: AppTheme.surface;
-    border-width: 1px;
-    border-color: AppTheme.line;
-    opacity: root.enabled ? 1.0 : 0.55;
-    Text {
-        text: root.enabled ? "Test pressure here" : "Not available yet";
-        color: root.enabled ? AppTheme.text-secondary : AppTheme.text-muted;
-        font-size: 12px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
-    }
-}
-
-component PenEditor inherits Rectangle {
-    in property <string> device-name;
-    in property <bool> enabled;
-    property <bool> disable-pressure: false;
-    callback retry-detection();
-
-    background: AppTheme.canvas;
-    VerticalLayout {
-        padding-left: 34px;
-        padding-right: 34px;
-        padding-top: 27px;
-        padding-bottom: 27px;
-        spacing: 17px;
-
-        PageHeader { icon: "pen"; title: "Pen"; subtitle: root.device-name; }
-
-        HorizontalLayout {
-            spacing: 20px;
-            vertical-stretch: 1;
-            Rectangle {
-                horizontal-stretch: 3;
-                VerticalLayout {
-                    spacing: 3px;
-                    SectionHeader { icon: "test"; title: "Pressure curve"; hint: root.enabled ? "" : "Not available yet"; }
-                    PressureCurvePreview { enabled: root.enabled; }
-                    SectionHeader { icon: "test"; title: "Test pressure area"; hint: ""; }
-                    PressureTestArea { enabled: root.enabled; }
-                }
-            }
-            Rectangle {
-                horizontal-stretch: 2;
-                VerticalLayout {
-                    spacing: 3px;
-                    SectionHeader { icon: "sensitivity"; title: "Sensitivity"; hint: root.enabled ? "" : "Not available yet"; }
-                    ValueRow { icon: "sensitivity"; label: "Tip sensitivity"; value: "-"; enabled: root.enabled; }
-                    Divider {}
-                    SwitchRow {
-                        icon: "disable-pressure";
-                        label: "Disable pressure";
-                        description: "Use a constant stroke width";
-                        checked: root.disable-pressure;
-                        enabled: root.enabled;
-                        toggled => { root.disable-pressure = !root.disable-pressure; }
-                    }
-                    Rectangle { height: 11px; }
-                    SectionHeader { icon: "buttons"; title: "Pen button bindings"; hint: ""; }
-                    ValueRow { icon: "button1"; label: "Button 1"; value: "-"; enabled: root.enabled; }
-                    Divider {}
-                    ValueRow { icon: "button2"; label: "Button 2"; value: "-"; enabled: root.enabled; }
-                    if !root.enabled: AvailabilityHint {}
-                    Rectangle { vertical-stretch: 1; }
-                    AppButton {
-                        label: "Retry detection";
-                        primary: false;
-                        enabled: true;
-                        clicked => { root.retry-detection(); }
-                    }
-                }
-            }
-        }
-    }
-}
-
-component PenPage inherits Rectangle {
-    in property <string> backend-state;
-    in property <string> device-name;
-    in property <bool> pen-data-available;
-    callback retry-detection();
-
-    if root.backend-state == "ready" && root.device-name != "": PenEditor {
-        device-name: root.device-name;
-        enabled: root.pen-data-available;
-        retry-detection => { root.retry-detection(); }
-    }
-    if root.backend-state != "ready" || root.device-name == "": EmptyState {
-        icon: "pen";
-        centered: false;
-        heading: "Pen";
-        message: root.backend-state == "daemon-not-running" ? "OpenTabletDriver is not running" : (root.backend-state == "daemon-starting" ? "Starting OpenTabletDriver" : (root.backend-state == "daemon-running" ? "Waiting for tablet detection" : (root.backend-state == "unknown" ? "Waiting for tablet detection" : "No tablet connected")));
-        detail: root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver to detect a tablet." : (root.backend-state == "daemon-starting" ? "Retry in a moment." : "Connect a tablet to configure the pen.");
-        primary-label: "";
-        secondary-label: "Retry detection";
-        secondary-clicked => { root.retry-detection(); }
-    }
-}
-
-component PluginsPage inherits Rectangle {
-    property <string> active-tab: "Installed";
-
-    background: AppTheme.canvas;
-    VerticalLayout {
-        padding-left: 34px;
-        padding-right: 34px;
-        padding-top: 27px;
-        padding-bottom: 27px;
-        spacing: 17px;
-
-        PageHeader { icon: "plugins"; title: "Plugins"; subtitle: "OpenTabletDriver plugins"; }
-        SectionTabs {
-            active-tab: root.active-tab;
-            select-tab(tab) => { root.active-tab = tab; }
-        }
-        Divider {}
-        Rectangle { vertical-stretch: 1; }
-        VerticalLayout {
-            alignment: center;
-            cross-axis-alignment: center;
-            spacing: 9px;
-            Rectangle {
-                width: 42px;
-                height: 42px;
-                border-radius: 21px;
-                background: AppTheme.surface-alt;
-                Icon { name: "plugins"; tint: AppTheme.accent-color; x: 12px; y: 12px; }
-            }
-            Text {
-                text: "Plugin integration is not available yet.";
-                color: AppTheme.text-secondary;
-                font-size: 14px;
-                horizontal-alignment: center;
-            }
-            AvailabilityHint {}
-        }
-        Rectangle { vertical-stretch: 1; }
-    }
-}
-
-component ProfilesPage inherits Rectangle {
-    background: AppTheme.canvas;
-    VerticalLayout {
-        padding-left: 34px;
-        padding-right: 34px;
-        padding-top: 27px;
-        padding-bottom: 27px;
-        spacing: 15px;
-
-        PageHeader { icon: "profiles"; title: "Profiles"; subtitle: "Configuration profiles"; }
-        SectionHeader { icon: "profiles"; title: "Profiles"; hint: "Not available yet"; }
-        Rectangle {
-            height: 82px;
-            border-radius: 10px;
-            background: AppTheme.surface;
-            border-width: 1px;
-            border-color: AppTheme.line;
-            VerticalLayout {
-                alignment: center;
-                padding-left: 16px;
-                padding-right: 16px;
-                Rectangle {
-                    width: 26px;
-                    height: 26px;
-                    border-radius: 13px;
-                    background: AppTheme.surface-alt;
-                    Icon { name: "profiles"; tint: AppTheme.accent-color; x: 4px; y: 4px; }
-                }
-                Text { text: "No profiles available"; color: AppTheme.text-secondary; font-size: 13px; }
-                Text { text: "Profile data will appear after backend integration."; color: AppTheme.text-muted; font-size: 11px; }
-            }
-        }
-        HorizontalLayout {
-            spacing: 8px;
-            AppButton { label: "New profile"; primary: true; enabled: false; }
-            AppButton { label: "Rename"; primary: false; enabled: false; }
-            AppButton { label: "Duplicate"; primary: false; enabled: false; }
-            AppButton { label: "Delete"; primary: false; enabled: false; }
-        }
-        Divider {}
-        SwitchRow {
-            icon: "profiles";
-            label: "Auto-switch profile";
-            description: "Switch profiles based on the active application";
-            checked: false;
-            enabled: false;
-        }
-        AvailabilityHint {}
-        Rectangle { vertical-stretch: 1; }
-    }
-}
-
-// A compact nested setting. Its height is animated so the option feels attached
-// to the parent switch instead of appearing as an unrelated new row.
-component StartupSubsetting inherits Rectangle {
-    in property <bool> expanded;
-    in-out property <bool> start-minimized;
-    callback changed();
-
-    // This row has a two-line description, so it needs the same height as a
-    // descriptive SwitchRow. Using the single-line row height clipped the
-    // selection background and made the toggle feel vertically misaligned.
-    height: root.expanded ? (AppTheme.compact ? 56px : 62px) : 0px;
-    opacity: root.expanded ? 1.0 : 0.0;
-    clip: true;
-    animate height { duration: AppTheme.reduce-motion ? 0ms : 180ms; }
-    animate opacity { duration: AppTheme.reduce-motion ? 0ms : 120ms; }
-
-    HorizontalLayout {
-        padding-left: 36px;
-        padding-right: 0px;
-        SwitchRow {
-            icon: "minimized";
-            label: "Start minimized";
-            description: "Open TabletFlow in the background";
-            checked: root.start-minimized;
-            enabled: root.expanded;
-            horizontal-stretch: 1;
-            toggled => { root.start-minimized = !root.start-minimized; root.changed(); }
-        }
     }
 }
 
@@ -1555,6 +2422,13 @@ component SettingsPage inherits Rectangle {
     in property <string> backend-state;
     in-out property <string> theme: "System";
     in-out property <string> accent: "Blue";
+    in-out property <bool> custom-colors: false;
+    in-out property <float> custom-background-hue: 212;
+    in-out property <float> custom-background-saturation: 0.10;
+    in-out property <float> custom-background-value: 0.96;
+    in-out property <float> custom-accent-hue: 212;
+    in-out property <float> custom-accent-saturation: 0.42;
+    in-out property <float> custom-accent-value: 0.86;
     in-out property <bool> compact-ui: false;
     in-out property <bool> reduce-animations: false;
     in-out property <bool> start-with-system: false;
@@ -1566,8 +2440,65 @@ component SettingsPage inherits Rectangle {
     in-out property <string> polling-interval: "Auto";
     in-out property <bool> low-power-mode: false;
     in-out property <bool> show-diagnostics: false;
+    property <bool> confirm-reset: false;
     callback open-github();
     callback settings-changed();
+
+    function connection-label() -> string {
+        return root.backend-state == "ready" ? "Connected"
+            : (root.backend-state == "daemon-not-running" ? "Offline"
+            : (root.backend-state == "daemon-starting" ? "Starting"
+            : (root.backend-state == "daemon-running" ? "Waiting"
+            : (root.backend-state == "no-tablet" ? "No tablet" : "Checking"))));
+    }
+
+    function connection-detail() -> string {
+        return root.backend-state == "unknown" ? "Checking connection"
+            : (root.backend-state == "daemon-not-running" ? "Driver is offline"
+            : (root.backend-state == "daemon-starting" ? "Starting driver"
+            : (root.backend-state == "daemon-running" ? "Waiting for a tablet"
+            : (root.backend-state == "no-tablet" ? "Driver connected · no tablet" : "Driver and tablet connected"))));
+    }
+
+    function connection-positive() -> bool {
+        return root.backend-state == "ready" || root.backend-state == "daemon-running" || root.backend-state == "no-tablet";
+    }
+
+    function reset-settings() {
+        root.theme = "System";
+        root.accent = "Blue";
+        root.custom-colors = false;
+        root.custom-background-hue = 212;
+        root.custom-background-saturation = 0.10;
+        root.custom-background-value = 0.96;
+        root.custom-accent-hue = 212;
+        root.custom-accent-saturation = 0.42;
+        root.custom-accent-value = 0.86;
+        AppTheme.mode = "system";
+        AppTheme.accent = "Blue";
+        AppTheme.custom-colors = false;
+        AppTheme.custom-background-hue = 212;
+        AppTheme.custom-background-saturation = 0.10;
+        AppTheme.custom-background-value = 0.96;
+        AppTheme.custom-accent-hue = 212;
+        AppTheme.custom-accent-saturation = 0.42;
+        AppTheme.custom-accent-value = 0.86;
+        root.compact-ui = false;
+        root.reduce-animations = false;
+        AppTheme.compact = false;
+        AppTheme.reduce-motion = false;
+        root.start-with-system = false;
+        root.start-minimized = false;
+        root.close-to-tray = false;
+        root.check-updates = true;
+        root.pause-hidden = true;
+        root.disable-unfocused-animations = false;
+        root.polling-interval = "Auto";
+        root.low-power-mode = false;
+        root.show-diagnostics = false;
+        root.confirm-reset = false;
+        root.settings-changed();
+    }
 
     background: AppTheme.canvas;
 
@@ -1575,176 +2506,380 @@ component SettingsPage inherits Rectangle {
         width: parent.width;
         height: parent.height;
         viewport-width: parent.width;
-        viewport-height: 1290px;
+        viewport-height: 1180px;
 
         HorizontalLayout {
             width: parent.width;
             Rectangle { horizontal-stretch: 1; }
             VerticalLayout {
-                width: parent.width < 840px ? parent.width : 840px;
-                padding-left: 34px;
-                padding-right: 34px;
-                padding-top: 26px;
-                padding-bottom: 30px;
-                spacing: 3px;
+                width: min(parent.width - 44px, 820px);
+                padding-top: 20px;
+                padding-bottom: 40px;
+                spacing: 14px;
 
-            PageHeader { icon: "settings"; title: "Settings"; subtitle: "TabletFlow"; }
+            PageHeader { icon: "settings"; title: "Settings"; subtitle: "Preferences for TabletFlow"; }
 
-            Rectangle { height: 13px; }
-            SectionHeader { icon: "theme"; title: "Appearance"; hint: "Applied instantly"; }
-            HorizontalLayout {
-                height: AppTheme.row-height;
-                padding-left: 12px;
-                padding-right: 12px;
-                cross-axis-alignment: center;
-                Icon { name: "theme"; tint: AppTheme.icon; width: 20px; height: 20px; }
-                Text { text: "Theme"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
-                SegmentButton { label: "System"; selected: root.theme == "System"; enabled: true; clicked => { root.theme = "System"; AppTheme.mode = "system"; root.settings-changed(); } }
-                SegmentButton { label: "Light"; selected: root.theme == "Light"; enabled: true; clicked => { root.theme = "Light"; AppTheme.mode = "light"; root.settings-changed(); } }
-                SegmentButton { label: "Dark"; selected: root.theme == "Dark"; enabled: true; clicked => { root.theme = "Dark"; AppTheme.mode = "dark"; root.settings-changed(); } }
-            }
-            HorizontalLayout {
-                height: AppTheme.row-height;
-                padding-left: 12px;
-                padding-right: 12px;
-                cross-axis-alignment: center;
-                Icon { name: "accent"; tint: AppTheme.icon; width: 20px; height: 20px; }
-                Text { text: "Accent color"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
-                ColorOption { swatch: #8fb5e6; selected: root.accent == "Blue"; enabled: true; clicked => { root.accent = "Blue"; AppTheme.accent = "Blue"; root.settings-changed(); } }
-                ColorOption { swatch: #d6aa72; selected: root.accent == "Amber"; enabled: true; clicked => { root.accent = "Amber"; AppTheme.accent = "Amber"; root.settings-changed(); } }
-                ColorOption { swatch: #9ac7b0; selected: root.accent == "Mint"; enabled: true; clicked => { root.accent = "Mint"; AppTheme.accent = "Mint"; root.settings-changed(); } }
-            }
-            Divider {}
-            SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing throughout TabletFlow"; checked: root.compact-ui; enabled: true; toggled => { root.compact-ui = !root.compact-ui; AppTheme.compact = root.compact-ui; root.settings-changed(); } }
-            SwitchRow { icon: "reduce"; label: "Reduce animations"; description: "Prefer instant transitions"; checked: root.reduce-animations; enabled: true; toggled => { root.reduce-animations = !root.reduce-animations; AppTheme.reduce-motion = root.reduce-animations; root.settings-changed(); } }
+            SectionHeader { icon: "theme"; title: "Appearance"; hint: ""; }
+            Rectangle {
+                height: AppTheme.compact ? 258px : 282px;
+                border-radius: 26px;
+                background: AppTheme.surface-shell;
+                border-width: 1px;
+                border-color: AppTheme.line;
+                Rectangle {
+                    x: 4px;
+                    y: 4px;
+                    width: parent.width - 8px;
+                    height: parent.height - 8px;
+                    border-radius: 22px;
+                    background: AppTheme.surface-raised;
+                    border-width: 1px;
+                    border-color: AppTheme.line;
+                    accessible-role: groupbox;
+                    accessible-label: "Appearance";
 
-            Rectangle { height: 17px; }
-            SectionHeader { icon: "general"; title: "General"; hint: "Applied instantly"; }
-            SwitchRow {
-                icon: "startup";
-                label: "Start with system";
-                description: "Open TabletFlow when you sign in";
-                checked: root.start-with-system;
-                enabled: true;
-                toggled => { root.start-with-system = !root.start-with-system; root.settings-changed(); }
-            }
-            StartupSubsetting {
-                expanded: root.start-with-system;
-                start-minimized <=> root.start-minimized;
-                changed => { root.settings-changed(); }
-            }
-            SwitchRow {
-                icon: "close";
-                label: "Close to tray";
-                description: "Keep TabletFlow available from the menu bar";
-                checked: root.close-to-tray;
-                enabled: true;
-                toggled => { root.close-to-tray = !root.close-to-tray; root.settings-changed(); }
-            }
-            SwitchRow {
-                icon: "updates";
-                label: "Check for updates";
-                description: "Notify when a new version is available";
-                checked: root.check-updates;
-                enabled: true;
-                toggled => { root.check-updates = !root.check-updates; root.settings-changed(); }
-            }
-
-            Rectangle { height: 17px; }
-            SectionHeader { icon: "plugins"; title: "OpenTabletDriver"; hint: "Embedded daemon"; }
-            ValueRow {
-                icon: "connection";
-                label: "Connection status";
-                value: root.backend-state == "unknown" ? "-" : (root.backend-state == "daemon-not-running" ? "Not running" : (root.backend-state == "daemon-starting" ? "Starting" : (root.backend-state == "daemon-running" ? "Waiting for tablet" : (root.backend-state == "no-tablet" ? "No tablet" : "Connected"))));
-                enabled: false;
-            }
-
-            Rectangle { height: 17px; }
-            SectionHeader { icon: "performance"; title: "Performance"; hint: "Not available yet"; }
-            SwitchRow { icon: "pause"; label: "Pause UI updates when hidden"; checked: root.pause-hidden; enabled: false; }
-            SwitchRow { icon: "focus"; label: "Disable animations when unfocused"; checked: root.disable-unfocused-animations; enabled: false; }
-            HorizontalLayout {
-                height: AppTheme.row-height;
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 12px;
-                cross-axis-alignment: center;
-                Icon { name: "polling"; tint: AppTheme.icon; width: 20px; height: 20px; }
-                Text { text: "Background polling interval"; color: AppTheme.text-secondary; font-size: 13px; horizontal-stretch: 1; vertical-alignment: center; }
-                SegmentButton { label: "Auto"; selected: root.polling-interval == "Auto"; enabled: false; }
-                SegmentButton { label: "Low"; selected: root.polling-interval == "Low"; enabled: false; }
-                SegmentButton { label: "High"; selected: root.polling-interval == "High"; enabled: false; }
-            }
-            SwitchRow { icon: "power"; label: "Low power mode"; checked: root.low-power-mode; enabled: false; }
-
-            Rectangle { height: 17px; }
-            SectionHeader { icon: "advanced"; title: "Advanced"; hint: "Not available yet"; }
-            SwitchRow { icon: "diagnostics"; label: "Show diagnostics"; checked: root.show-diagnostics; enabled: false; }
-            ValueRow { icon: "config"; label: "Open config directory"; value: "Not available yet"; enabled: false; }
-            ValueRow {
-                icon: "reset";
-                label: "Reset TabletFlow settings";
-                value: "Reset";
-                enabled: true;
-                interactive: true;
-                show-chevron: true;
-                clicked => {
-                    root.theme = "System";
-                    root.accent = "Blue";
-                    AppTheme.mode = "system";
-                    AppTheme.accent = "Blue";
-                    root.compact-ui = false;
-                    root.reduce-animations = false;
-                    AppTheme.compact = false;
-                    AppTheme.reduce-motion = false;
-                    root.start-with-system = false;
-                    root.start-minimized = false;
-                    root.close-to-tray = false;
-                    root.check-updates = true;
-                    root.pause-hidden = true;
-                    root.disable-unfocused-animations = false;
-                    root.polling-interval = "Auto";
-                    root.low-power-mode = false;
-                    root.show-diagnostics = false;
-                    root.settings-changed();
+                    VerticalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 0px;
+                        HorizontalLayout {
+                            height: AppTheme.compact ? 54px : 62px;
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 12px;
+                            cross-axis-alignment: center;
+                            Icon { name: "theme"; tint: AppTheme.icon; width: 20px; height: 20px; }
+                            Text { text: "Theme"; color: AppTheme.text-secondary; font-size: 13px; font-weight: 500; horizontal-stretch: 1; vertical-alignment: center; }
+                            SegmentButton { label: "System"; selected: root.theme == "System"; clicked => { root.theme = "System"; AppTheme.mode = "system"; root.settings-changed(); } }
+                            SegmentButton { label: "Light"; selected: root.theme == "Light"; clicked => { root.theme = "Light"; AppTheme.mode = "light"; root.settings-changed(); } }
+                            SegmentButton { label: "Dark"; selected: root.theme == "Dark"; clicked => { root.theme = "Dark"; AppTheme.mode = "dark"; root.settings-changed(); } }
+                        }
+                        Divider {}
+                        HorizontalLayout {
+                            height: AppTheme.compact ? 54px : 62px;
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 8px;
+                            cross-axis-alignment: center;
+                            accessible-role: radio-group;
+                            accessible-label: "Accent color";
+                            Icon { name: "accent"; tint: AppTheme.icon; width: 20px; height: 20px; }
+                            Text { text: "Accent color"; color: AppTheme.text-secondary; font-size: 13px; font-weight: 500; horizontal-stretch: 1; vertical-alignment: center; }
+                            ColorOption { label: "Blue"; swatch: #8fb5e6; selected: root.accent == "Blue"; clicked => { root.accent = "Blue"; AppTheme.accent = "Blue"; root.settings-changed(); } }
+                            ColorOption { label: "Amber"; swatch: #d6aa72; selected: root.accent == "Amber"; clicked => { root.accent = "Amber"; AppTheme.accent = "Amber"; root.settings-changed(); } }
+                            ColorOption { label: "Mint"; swatch: #9ac7b0; selected: root.accent == "Mint"; clicked => { root.accent = "Mint"; AppTheme.accent = "Mint"; root.settings-changed(); } }
+                        }
+                        Divider {}
+                        SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing in controls and navigation"; checked: root.compact-ui; toggled => { root.compact-ui = !root.compact-ui; AppTheme.compact = root.compact-ui; root.settings-changed(); } }
+                        Divider {}
+                        SwitchRow { icon: "reduce"; label: "Reduce motion"; description: "Use shorter fades and remove large movement"; checked: root.reduce-animations; toggled => { root.reduce-animations = !root.reduce-animations; AppTheme.reduce-motion = root.reduce-animations; root.settings-changed(); } }
+                    }
                 }
             }
 
-            Rectangle { height: 20px; }
-            Divider {}
+            SectionHeader { icon: "palette"; title: "Custom palette"; hint: "Optional"; }
+            Rectangle {
+                height: root.custom-colors ? (AppTheme.compact ? 300px : 320px) : (AppTheme.compact ? 78px : 86px);
+                border-radius: 26px;
+                background: AppTheme.surface-shell;
+                border-width: 1px;
+                border-color: root.custom-colors ? AppTheme.accent-color : AppTheme.line;
+                Rectangle {
+                    x: 4px;
+                    y: 4px;
+                    width: parent.width - 8px;
+                    height: parent.height - 8px;
+                    border-radius: 22px;
+                    background: AppTheme.surface-raised;
+                    border-width: 1px;
+                    border-color: AppTheme.line;
+                    accessible-role: groupbox;
+                    accessible-label: "Custom palette";
+
+                    VerticalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 0px;
+                        HorizontalLayout {
+                            height: AppTheme.compact ? 58px : 64px;
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 12px;
+                            cross-axis-alignment: center;
+                            Icon { name: "palette"; tint: AppTheme.icon; width: 20px; height: 20px; }
+                            VerticalLayout {
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                Text { text: "Use custom colors"; color: AppTheme.text-secondary; font-size: 13px; font-weight: 500; }
+                                Text { text: "Tune the background and highlight color independently"; color: AppTheme.text-muted; font-size: 11px; }
+                            }
+                            if root.custom-colors: AppButton {
+                                label: "Reset custom";
+                                primary: false;
+                                button-width: 112px;
+                                clicked => {
+                                    root.custom-colors = false;
+                                    AppTheme.custom-colors = false;
+                                    root.settings-changed();
+                                }
+                            }
+                            SwitchVisual { checked: root.custom-colors; }
+                            TouchArea {
+                                clicked => {
+                                    root.custom-colors = !root.custom-colors;
+                                    AppTheme.custom-colors = root.custom-colors;
+                                    root.settings-changed();
+                                }
+                            }
+                        }
+                        if root.custom-colors: Divider {}
+                        if root.custom-colors: HorizontalLayout {
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            padding-top: 8px;
+                            padding-bottom: 8px;
+                            spacing: 12px;
+                            HsvColorPicker {
+                                label: "Background";
+                                hue <=> root.custom-background-hue;
+                                saturation <=> root.custom-background-saturation;
+                                value <=> root.custom-background-value;
+                                changed => {
+                                    root.custom-colors = true;
+                                    AppTheme.custom-colors = true;
+                                    root.settings-changed();
+                                }
+                            }
+                            HsvColorPicker {
+                                label: "Highlight";
+                                hue <=> root.custom-accent-hue;
+                                saturation <=> root.custom-accent-saturation;
+                                value <=> root.custom-accent-value;
+                                changed => {
+                                    root.custom-colors = true;
+                                    AppTheme.custom-colors = true;
+                                    root.settings-changed();
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+            }
+
+            SectionHeader { icon: "general"; title: "Startup & background"; hint: ""; }
+            Rectangle {
+                height: AppTheme.compact ? 188px : 212px;
+                border-radius: 26px;
+                background: AppTheme.surface-shell;
+                border-width: 1px;
+                border-color: AppTheme.line;
+                Rectangle {
+                    x: 4px;
+                    y: 4px;
+                    width: parent.width - 8px;
+                    height: parent.height - 8px;
+                    border-radius: 22px;
+                    background: AppTheme.surface-raised;
+                    border-width: 1px;
+                    border-color: AppTheme.line;
+                    accessible-role: groupbox;
+                    accessible-label: "Startup and background";
+                    VerticalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 0px;
+                        SwitchRow {
+                            icon: "startup";
+                            label: "Start with system";
+                            description: "Open TabletFlow when you sign in";
+                            checked: root.start-with-system;
+                            toggled => { root.start-with-system = !root.start-with-system; root.settings-changed(); }
+                        }
+                        Divider {}
+                        SwitchRow {
+                            icon: "minimized";
+                            label: "Start minimized";
+                            description: "Open in the background after sign-in";
+                            checked: root.start-minimized;
+                            enabled: root.start-with-system;
+                            toggled => { root.start-minimized = !root.start-minimized; root.settings-changed(); }
+                        }
+                        Divider {}
+                        SwitchRow {
+                            icon: "close";
+                            label: "Keep running after closing";
+                            description: "Keep TabletFlow available from the menu bar or system tray";
+                            checked: root.close-to-tray;
+                            toggled => { root.close-to-tray = !root.close-to-tray; root.settings-changed(); }
+                        }
+                    }
+                }
+            }
+
+            SectionHeader { icon: "connection"; title: "Driver connection"; hint: ""; }
+            Rectangle {
+                height: 88px;
+                border-radius: 24px;
+                background: AppTheme.surface-shell;
+                border-width: 1px;
+                border-color: AppTheme.line;
+                Rectangle {
+                    x: 4px;
+                    y: 4px;
+                    width: parent.width - 8px;
+                    height: parent.height - 8px;
+                    border-radius: 20px;
+                    background: AppTheme.surface-raised;
+                    border-width: 1px;
+                    border-color: AppTheme.line;
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        spacing: 13px;
+                        cross-axis-alignment: center;
+                        Rectangle {
+                            width: 38px;
+                            height: 38px;
+                            border-radius: 13px;
+                            background: root.backend-state == "ready" ? AppTheme.success-soft : AppTheme.surface-alt;
+                            Rectangle {
+                                x: 15px;
+                                y: 15px;
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: root.backend-state == "ready" ? AppTheme.success : (root.backend-state == "daemon-not-running" ? AppTheme.danger : AppTheme.warning);
+                            }
+                        }
+                        VerticalLayout {
+                            spacing: 3px;
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: "OpenTabletDriver";
+                                color: AppTheme.text-secondary;
+                                font-size: 13px;
+                                font-weight: 600;
+                            }
+                            Text {
+                                text: root.connection-detail();
+                                color: AppTheme.text-muted;
+                                font-size: 12px;
+                            }
+                        }
+                        StatusPill {
+                            label: root.connection-label();
+                            positive: root.connection-positive();
+                            danger: root.backend-state == "daemon-not-running";
+                        }
+                    }
+                }
+            }
+
+            SectionHeader { icon: "reset"; title: "Maintenance"; hint: ""; }
+            Rectangle {
+                height: root.confirm-reset ? 126px : 92px;
+                border-radius: 24px;
+                background: AppTheme.surface-shell;
+                border-width: 1px;
+                border-color: root.confirm-reset ? AppTheme.danger : AppTheme.line;
+                Rectangle {
+                    x: 4px;
+                    y: 4px;
+                    width: parent.width - 8px;
+                    height: parent.height - 8px;
+                    border-radius: 20px;
+                    background: root.confirm-reset ? AppTheme.danger-soft : AppTheme.surface-raised;
+                    border-width: 1px;
+                    border-color: AppTheme.line;
+                    accessible-role: groupbox;
+                    accessible-label: root.confirm-reset ? "Reset confirmation" : "Maintenance";
+                    accessible-live-region: polite;
+
+                    if !root.confirm-reset: HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 14px;
+                        spacing: 14px;
+                        cross-axis-alignment: center;
+                        VerticalLayout {
+                            spacing: 3px;
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+                            alignment: center;
+                            Text { text: "Reset TabletFlow settings"; color: AppTheme.text-secondary; font-size: 13px; font-weight: 600; }
+                            Text { text: "Restore appearance and startup preferences"; color: AppTheme.text-muted; font-size: 12px; }
+                        }
+                        AppButton {
+                            label: "Reset…";
+                            primary: false;
+                            danger: true;
+                            clicked => { root.confirm-reset = true; }
+                        }
+                    }
+                    if root.confirm-reset: FocusScope {
+                        capture-key-pressed(event) => {
+                            if event.text == Key.Escape {
+                                root.confirm-reset = false;
+                                return accept;
+                            }
+                            return reject;
+                        }
+                        VerticalLayout {
+                            padding-left: 18px;
+                            padding-right: 14px;
+                            padding-top: 14px;
+                            padding-bottom: 14px;
+                            spacing: 9px;
+                            Text { text: "Reset all TabletFlow preferences?"; color: AppTheme.danger; font-size: 14px; font-weight: 600; }
+                            Text { text: "Your tablet area stays unchanged. Appearance and startup settings return to defaults."; color: AppTheme.text-secondary; font-size: 12px; wrap: word-wrap; }
+                            HorizontalLayout {
+                                spacing: 9px;
+                                alignment: end;
+                                reset-cancel := AppButton { label: "Cancel"; primary: false; clicked => { root.confirm-reset = false; } }
+                                AppButton { label: "Reset settings"; primary: false; danger: true; button-width: 142px; clicked => { root.reset-settings(); } }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 80px;
+                border-radius: 22px;
+                background: AppTheme.surface;
+                border-width: 1px;
+                border-color: AppTheme.line;
                 HorizontalLayout {
-                    height: 38px;
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    Text { text: "TabletFlow 0.1.0"; color: AppTheme.text-muted; font-size: 11px; horizontal-stretch: 1; vertical-alignment: center; }
-                    Text { text: "OpenTabletDriver: version unavailable"; color: AppTheme.text-muted; font-size: 11px; vertical-alignment: center; }
+                    padding-left: 18px;
+                    padding-right: 10px;
+                    spacing: 12px;
+                    cross-axis-alignment: center;
+                    VerticalLayout {
+                        spacing: 3px;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+                        alignment: center;
+                        Text { text: "TabletFlow 0.1.0"; color: AppTheme.text-secondary; font-size: 12px; font-weight: 600; }
+                        Text { text: "Independent OpenTabletDriver frontend"; color: AppTheme.text-muted; font-size: 11px; }
+                    }
                     LinkButton { label: "GitHub"; clicked => { root.open-github(); } }
                 }
             }
-            Rectangle { horizontal-stretch: 1; }
+            Rectangle { vertical-stretch: 1; }
         }
+        Rectangle { horizontal-stretch: 1; }
     }
 }
-
-component SectionPage inherits Rectangle {
-    in property <string> page-title;
-    in property <string> message;
-
-    background: AppTheme.canvas;
-    VerticalLayout {
-        padding-left: 34px;
-        padding-right: 34px;
-        padding-top: 27px;
-        padding-bottom: 27px;
-        spacing: 12px;
-        PageHeader { icon: root.page-title == "Bindings" ? "buttons" : ""; title: root.page-title; subtitle: ""; }
-        if root.message != "": Text {
-            text: root.message;
-            color: AppTheme.text-muted;
-            font-size: 13px;
-        }
-        Rectangle { vertical-stretch: 1; }
-    }
 }
 
 export component TrayIcon inherits SystemTrayIcon {
@@ -1773,13 +2908,13 @@ export component TrayIcon inherits SystemTrayIcon {
 // The default stays unknown until real IPC data is provided by the backend.
 export component MainWindow inherits Window {
     title: "TabletFlow";
-    preferred-width: 960px;
-    preferred-height: 620px;
-    min-width: 760px;
-    min-height: 500px;
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    min-width: 820px;
+    min-height: 560px;
 
     in-out property <string> active-page: "Overview";
-    in-out property <bool> sidebar-compact: true;
+    in-out property <bool> sidebar-compact: false;
     in-out property <bool> sidebar-overlay-open: false;
     in-out property <string> backend-state: "unknown";
     in-out property <string> device-name: "";
@@ -1794,6 +2929,13 @@ export component MainWindow inherits Window {
     in-out property <bool> pen-data-available: false;
     in-out property <string> theme: "System";
     in-out property <string> accent: "Blue";
+    in-out property <bool> custom-colors: false;
+    in-out property <float> custom-background-hue: 212;
+    in-out property <float> custom-background-saturation: 0.10;
+    in-out property <float> custom-background-value: 0.96;
+    in-out property <float> custom-accent-hue: 212;
+    in-out property <float> custom-accent-saturation: 0.42;
+    in-out property <float> custom-accent-value: 0.86;
     in-out property <bool> compact-ui: false;
     in-out property <bool> reduce-animations: false;
     in-out property <bool> start-with-system: false;
@@ -1813,22 +2955,53 @@ export component MainWindow inherits Window {
     callback open-github();
     callback settings-changed();
 
+    function sync-custom-theme() {
+        AppTheme.custom-colors = root.custom-colors;
+        AppTheme.custom-background-hue = root.custom-background-hue;
+        AppTheme.custom-background-saturation = root.custom-background-saturation;
+        AppTheme.custom-background-value = root.custom-background-value;
+        AppTheme.custom-accent-hue = root.custom-accent-hue;
+        AppTheme.custom-accent-saturation = root.custom-accent-saturation;
+        AppTheme.custom-accent-value = root.custom-accent-value;
+    }
+
+    changed custom-colors => { root.sync-custom-theme(); }
+    changed custom-background-hue => { root.sync-custom-theme(); }
+    changed custom-background-saturation => { root.sync-custom-theme(); }
+    changed custom-background-value => { root.sync-custom-theme(); }
+    changed custom-accent-hue => { root.sync-custom-theme(); }
+    changed custom-accent-saturation => { root.sync-custom-theme(); }
+    changed custom-accent-value => { root.sync-custom-theme(); }
+
     changed width => {
-        root.sidebar-compact = root.width < 1500px;
-        if root.width >= 1500px {
+        root.sidebar-compact = root.width < 920px;
+        if root.width >= 920px {
             root.sidebar-overlay-open = false;
         }
     }
 
-    Rectangle {
+    app-focus := FocusScope {
         width: parent.width;
         height: parent.height;
-        background: AppTheme.canvas;
+        focus-on-click: false;
+        capture-key-pressed(event) => {
+            if root.sidebar-overlay-open && event.text == Key.Escape {
+                root.sidebar-overlay-open = false;
+                return accept;
+            }
+            return reject;
+        }
+
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: AppTheme.canvas;
 
         HorizontalLayout {
             spacing: 0px;
             Sidebar {
                 active-page: root.active-page;
+                backend-state: root.backend-state;
                 compact: root.sidebar-compact;
                 navigate(page) => {
                     root.sidebar-overlay-open = false;
@@ -1841,41 +3014,41 @@ export component MainWindow inherits Window {
             Rectangle {
                 horizontal-stretch: 1;
                 background: AppTheme.canvas;
+                accessible-role: main;
+                accessible-label: root.active-page;
 
                 if root.active-page == "Overview" && root.backend-state == "daemon-not-running": EmptyState {
                     icon: "daemon";
                     heading: "TabletFlow";
-                    message: "OpenTabletDriver is not running";
-                    detail: "";
-                    primary-label: "Start daemon";
-                    secondary-label: "Retry";
+                    message: "The tablet driver is offline";
+                    detail: "Start OpenTabletDriver to detect your tablet.";
+                    primary-label: "Start driver";
+                    secondary-label: "Check again";
                     primary-clicked => { root.start-daemon(); }
                     secondary-clicked => { root.retry-backend(); }
                 }
                 if root.active-page == "Overview" && root.backend-state == "no-tablet": EmptyState {
                     icon: "tablet";
                     heading: "TabletFlow";
-                    message: "No tablet detected";
-                    detail: "Connect a supported tablet.";
+                    message: "Connect your tablet";
+                    detail: "Once connected, TabletFlow will load its active area.";
                     primary-label: "";
-                    secondary-label: "Retry";
+                    secondary-label: "Check again";
                     secondary-clicked => { root.retry-backend(); }
                 }
                 if root.active-page == "Overview" && root.backend-state == "daemon-starting": EmptyState {
                     icon: "daemon";
                     heading: "TabletFlow";
-                    message: "Starting OpenTabletDriver";
-                    detail: "Retry in a moment.";
+                    message: "Starting the tablet driver";
+                    detail: "This usually takes a few seconds.";
                     primary-label: "";
-                    secondary-label: "Retry";
-                    secondary-clicked => { root.retry-backend(); }
+                    secondary-label: "";
                 }
                 if root.active-page == "Overview" && root.backend-state == "ready" && root.device-name != "": DeviceOverview {
                     device-name: root.device-name;
                     active-profile: root.active-profile;
                     configure-area => { root.navigate("Area"); }
-                    open-pen => { root.navigate("Pen"); }
-                    open-bindings => { root.navigate("Bindings"); }
+                    open-settings => { root.navigate("Settings"); }
                 }
                 if root.active-page == "Overview"
                     && (root.backend-state == "unknown"
@@ -1883,40 +3056,41 @@ export component MainWindow inherits Window {
                         || (root.backend-state == "ready" && root.device-name == "")): EmptyState {
                     icon: root.backend-state == "daemon-running" ? "tablet" : "daemon";
                     heading: "TabletFlow";
-                    message: root.backend-state == "daemon-running" ? "Waiting for tablet detection" : "Waiting for OpenTabletDriver";
-                    detail: root.backend-state == "daemon-running" ? "Connect a supported tablet." : "Connect OpenTabletDriver to continue.";
+                    message: root.backend-state == "daemon-running" ? "Waiting for a tablet" : "Checking OpenTabletDriver";
+                    detail: root.backend-state == "daemon-running" ? "Connect a supported tablet to continue." : "TabletFlow is checking the local driver service.";
                     primary-label: "";
-                    secondary-label: "Retry";
+                    secondary-label: "Check again";
                     secondary-clicked => { root.retry-backend(); }
                 }
 
-                if root.active-page == "Area": AreaPage {
+                AreaPage {
+                    visible: root.active-page == "Area";
                     backend-state: root.backend-state;
                     device-name: root.device-name;
                     display-width: root.area-preview-width;
                     display-height: root.area-preview-height;
-                    area-width <=> root.area-width;
-                    area-height <=> root.area-height;
-                    area-x <=> root.area-x;
-                    area-y <=> root.area-y;
-                    area-rotation <=> root.area-rotation;
+                    area-width: root.area-width;
+                    area-height: root.area-height;
+                    area-x: root.area-x;
+                    area-y: root.area-y;
+                    area-rotation: root.area-rotation;
                     retry-detection => { root.retry-backend(); }
+                    start-driver => { root.start-daemon(); }
                     apply-area(tablet, width, height, x, y, rotation) => {
                         root.apply-area(tablet, width, height, x, y, rotation);
                     }
                 }
-                if root.active-page == "Pen": PenPage {
-                    backend-state: root.backend-state;
-                    device-name: root.device-name;
-                    pen-data-available: root.pen-data-available;
-                    retry-detection => { root.retry-backend(); }
-                }
-                if root.active-page == "Plugins": PluginsPage {}
-                if root.active-page == "Profiles": ProfilesPage {}
                 if root.active-page == "Settings": SettingsPage {
                     backend-state: root.backend-state;
                     theme <=> root.theme;
                     accent <=> root.accent;
+                    custom-colors <=> root.custom-colors;
+                    custom-background-hue <=> root.custom-background-hue;
+                    custom-background-saturation <=> root.custom-background-saturation;
+                    custom-background-value <=> root.custom-background-value;
+                    custom-accent-hue <=> root.custom-accent-hue;
+                    custom-accent-saturation <=> root.custom-accent-saturation;
+                    custom-accent-value <=> root.custom-accent-value;
                     compact-ui <=> root.compact-ui;
                     reduce-animations <=> root.reduce-animations;
                     start-with-system <=> root.start-with-system;
@@ -1931,26 +3105,57 @@ export component MainWindow inherits Window {
                     open-github => { root.open-github(); }
                     settings-changed => { root.settings-changed(); }
                 }
-                if root.active-page == "Bindings": SectionPage {
-                    page-title: "Bindings";
-                    message: root.backend-state == "unknown" ? "" : (root.backend-state == "daemon-not-running" ? "OpenTabletDriver is not running" : (root.backend-state == "daemon-running" ? "Waiting for tablet detection" : (root.backend-state == "no-tablet" ? "Connect a tablet to continue." : "")));
-                }
             }
         }
 
-        if root.sidebar-compact && root.sidebar-overlay-open: Sidebar {
-            x: 0px;
-            y: 0px;
+            if root.sidebar-compact: Rectangle {
+            width: parent.width;
             height: parent.height;
-            active-page: root.active-page;
-            compact: false;
-            overlay: true;
-            navigate(page) => {
-                root.sidebar-overlay-open = false;
-                root.navigate(page);
+            background: transparent;
+
+            scrim := Rectangle {
+                width: parent.width;
+                height: parent.height;
+                background: AppTheme.scrim;
+                opacity: root.sidebar-overlay-open ? 1.0 : 0.0;
+                animate opacity {
+                    duration: AppTheme.reduce-motion ? 100ms : 220ms;
+                    easing: cubic-bezier(0.32, 0.72, 0, 1);
+                }
+                TouchArea {
+                    enabled: root.sidebar-overlay-open;
+                    clicked => { root.sidebar-overlay-open = false; }
+                }
             }
-            toggle-overlay => {
-                root.sidebar-overlay-open = false;
+
+            drawer := Sidebar {
+                visible: !AppTheme.reduce-motion || root.sidebar-overlay-open;
+                x: root.sidebar-overlay-open ? 12px : (AppTheme.reduce-motion ? 12px : -232px);
+                y: 12px;
+                height: parent.height - 24px;
+                active-page: root.active-page;
+                backend-state: root.backend-state;
+                compact: false;
+                overlay: true;
+                interactive: root.sidebar-overlay-open;
+                overlay-open: root.sidebar-overlay-open;
+                border-radius: 20px;
+                clip: true;
+                drop-shadow-blur: 34px;
+                drop-shadow-color: AppTheme.shadow;
+                drop-shadow-offset-y: 14px;
+                animate x {
+                    duration: AppTheme.reduce-motion ? 100ms : 240ms;
+                    easing: cubic-bezier(0.32, 0.72, 0, 1);
+                }
+                navigate(page) => {
+                    root.sidebar-overlay-open = false;
+                    root.navigate(page);
+                }
+                toggle-overlay => {
+                    root.sidebar-overlay-open = false;
+                }
+            }
             }
         }
     }

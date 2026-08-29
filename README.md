@@ -4,7 +4,7 @@
 
 ### Modern tablet configuration, powered by OpenTabletDriver Daemon.
 
-A modern **Material Design 3** frontend for [OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver).
+A focused native desktop frontend for [OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver).
 
 **English** · [Русский](README_RU.md)
 
@@ -12,21 +12,17 @@ A modern **Material Design 3** frontend for [OpenTabletDriver](https://github.co
 
 ---
 
-> [!WARNING]
-> **TabletFlow is currently in early development.**  
-> Features, UI and compatibility may change at any time.
-
 ## ✨ What is TabletFlow?
 
 **TabletFlow** is an independent desktop frontend for **OpenTabletDriver Daemon**.
 
 OpenTabletDriver handles the tablet and input processing.  
-TabletFlow focuses on making configuration **modern, visual and pleasant to use**.
+TabletFlow provides a clear overview, precise active-area editing and dependable application preferences.
 
 ```text
 ┌──────────────────────┐
 │      TabletFlow      │
-│       MD3 UI         │
+│      Native UI       │
 └──────────┬───────────┘
            │
            │ IPC
@@ -40,21 +36,17 @@ TabletFlow focuses on making configuration **modern, visual and pleasant to use*
       Graphics Tablet
 ```
 
-## 🎯 Goals
+## 🎯 Current scope
 
-- 🎨 **Material Design 3** interface
-- 🍎 Native **Apple Silicon / ARM64** support
-- 🖥️ macOS, Windows and Linux
-- 📐 Visual tablet area editor
-- 🖊️ Pen and pressure configuration
-- 🎛️ Easy button bindings
-- 👤 Multiple configuration profiles
-- 🔌 OpenTabletDriver plugin integration
-- 🩺 Useful diagnostics
+- 🏠 **Overview** with OpenTabletDriver and connected-tablet status
+- 📐 **Active area** with a visual draft, exact values and inline input checks
+- ✅ Applying format-checked area changes and confirming the values read back from OpenTabletDriver
+- ⚙️ **Settings** for appearance, startup and background behavior
+- 🔌 IPC connection, tablet detection and configuration reading
 
-## 📐 Area Editor
+## 📐 Active area editor
 
-Tablet area configuration should be visual **and** precise.
+Active-area configuration is visual **and** precise. TabletFlow reads the current values from OpenTabletDriver and keeps edits in a local draft until they are valid and ready to apply.
 
 ```text
 ┌─────────────────────────────────┐
@@ -70,43 +62,40 @@ Tablet area configuration should be visual **and** precise.
 └─────────────────────────────────┘
 ```
 
-Planned controls include:
+The editor currently provides:
 
-- drag & resize
-- exact dimensions
-- rotation
-- centering
-- full area
-- aspect-ratio lock
-- display mapping
+- exact width, height, X, Y and rotation values
+- millimetre and degree units
+- inline input checks before Apply becomes available
+- a preview driven by the current draft
+- Revert for discarding local changes
+- confirmation after OpenTabletDriver reports the applied values
 
-## 🧩 Planned Pages
+## 🧩 Available pages
 
 | Page | Purpose |
 |---|---|
-| 🏠 **Home** | Device and daemon status |
-| 📐 **Area** | Tablet and display mapping |
-| 🖊️ **Pen** | Pressure and pen settings |
-| 🎛️ **Bindings** | Buttons and shortcuts |
-| 👤 **Profiles** | Multiple configurations |
-| 🔌 **Plugins** | OpenTabletDriver plugins |
-| ⚙️ **Settings** | TabletFlow preferences |
-| 🩺 **Diagnostics** | Logs and connection state |
+| 🏠 **Overview** | Connection and connected-tablet status |
+| 📐 **Active area** | Review, check and apply tablet-area values |
+| ⚙️ **Settings** | Appearance and application behavior |
 
 ## 🗺️ Roadmap
 
-- [x] Application shell & MD3 theme (prototype)
-- [ ] Connect to OpenTabletDriver Daemon
-- [ ] Detect connected tablets
-- [ ] Read and apply configuration
-- [ ] Tablet Area editor
+- [x] Native application shell and responsive interface
+- [x] Connect to OpenTabletDriver Daemon over IPC
+- [x] Detect connected tablets
+- [x] Read the current active-area configuration
+- [x] Check draft values and apply active-area changes
+- [x] Confirm applied values from OpenTabletDriver
+- [ ] Direct drag and resize in the area preview
+- [ ] Center, full-area and aspect-ratio controls
 - [ ] Display mapping
 - [ ] Pen configuration
 - [ ] Bindings
 - [ ] Profiles
 - [ ] Plugins
 - [ ] Diagnostics
-- [ ] macOS ARM64 release
+- [x] macOS ARM64 release
 - [ ] Windows & Linux builds
 
 ## 💻 Platforms
@@ -146,14 +135,14 @@ The current ARM64 build is distributed without an Apple Developer signature, so 
 
 ## 🔧 Development
 
-The first prototype uses Rust and Slint. The UI is compiled into the native binary, with no WebView or JavaScript runtime.
+TabletFlow uses Rust and Slint. The UI is compiled into the native binary, with no WebView or JavaScript runtime.
 
 ```bash
 cargo run
 cargo build --release
 ```
 
-The current prototype contains a lightweight application shell, compact navigation and honest empty states. Device, profile and daemon values remain empty until they are supplied by the OpenTabletDriver backend.
+The current application includes Overview, format-checked draft editing for the active area, and Settings. Device and area values remain unavailable until they are supplied by the OpenTabletDriver backend.
 
 ```bash
 git clone https://github.com/UnderWeek/TabletFlow.git
