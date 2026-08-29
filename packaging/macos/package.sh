@@ -21,6 +21,11 @@ APP_DIR="$OUTPUT_DIR/TabletFlow.app"
 STAGING_DIR="$OUTPUT_DIR/.dmg-staging"
 DMG_PATH="$OUTPUT_DIR/TabletFlow-${VERSION}-macos-${ARCH}.dmg"
 
+cleanup() {
+    rm -rf "$STAGING_DIR"
+}
+trap cleanup EXIT
+
 rm -rf "$APP_DIR" "$STAGING_DIR" "$DMG_PATH"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" "$STAGING_DIR"
 
@@ -38,7 +43,27 @@ chmod +x "$APP_DIR/Contents/MacOS/TabletFlow" "$APP_DIR/Contents/MacOS/OpenTable
 
 ln -s /Applications "$STAGING_DIR/Applications"
 cp -R "$APP_DIR" "$STAGING_DIR/TabletFlow.app"
-hdiutil create -quiet -volname TabletFlow -srcfolder "$STAGING_DIR" -format UDZO "$DMG_PATH"
-rm -rf "$STAGING_DIR"
+
+for attempt in 1 2 3; do
+    rm -f "$DMG_PATH"
+    echo "Creating macOS disk image (attempt $attempt/3)..." >&2
+    if hdiutil create \
+        -ov \
+        -nospotlight \
+        -noanyowners \
+        -fs APFS \
+        -volname TabletFlow \
+        -srcfolder "$STAGING_DIR" \
+        -format UDZO \
+        "$DMG_PATH"; then
+        break
+    fi
+
+    if [[ "$attempt" -eq 3 ]]; then
+        echo "Unable to create macOS disk image after 3 attempts." >&2
+        exit 1
+    fi
+    sleep "$attempt"
+done
 
 echo "$DMG_PATH"
