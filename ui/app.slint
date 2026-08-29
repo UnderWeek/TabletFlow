@@ -161,6 +161,30 @@ component Icon inherits Rectangle {
         border-radius: 1px;
         background: root.tint;
     }
+    if root.name == "sidebar-toggle": Rectangle {
+        x: 3px;
+        y: 4px;
+        width: 12px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "sidebar-toggle": Rectangle {
+        x: 3px;
+        y: 9px;
+        width: 12px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
+    if root.name == "sidebar-toggle": Rectangle {
+        x: 3px;
+        y: 14px;
+        width: 8px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.tint;
+    }
     if root.name == "theme" || root.name == "connection": Rectangle {
         x: 2px;
         y: 2px;
@@ -389,6 +413,7 @@ component NavItem inherits Rectangle {
     in property <string> icon;
     in property <string> label;
     in property <bool> selected;
+    in property <bool> compact: false;
     callback clicked();
 
     height: AppTheme.nav-height;
@@ -396,16 +421,17 @@ component NavItem inherits Rectangle {
     background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed ? #29313a : (touch.has-hover ? #20262d : transparent));
 
     HorizontalLayout {
-        padding-left: 11px;
-        padding-right: 11px;
+        padding-left: root.compact ? 0px : 11px;
+        padding-right: root.compact ? 0px : 11px;
         spacing: 10px;
+        alignment: root.compact ? center : start;
         cross-axis-alignment: center;
         Icon {
             name: root.icon;
             tint: root.selected ? AppTheme.accent-color : (touch.pressed ? #cbd4df : AppTheme.icon);
             width: 18px;
         }
-        Text {
+        if !root.compact: Text {
             text: root.label;
             color: root.selected ? AppTheme.text : #b8c1cc;
             font-size: 13px;
@@ -422,14 +448,17 @@ component NavItem inherits Rectangle {
 
 component Sidebar inherits Rectangle {
     in property <string> active-page;
+    in property <bool> compact: false;
+    in property <bool> overlay: false;
     callback navigate(string);
+    callback toggle-overlay();
 
-    width: 196px;
+    width: root.compact ? 64px : 196px;
     background: AppTheme.sidebar;
 
     VerticalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: root.compact ? 10px : 14px;
+        padding-right: root.compact ? 10px : 14px;
         padding-top: 17px;
         padding-bottom: 17px;
         spacing: 4px;
@@ -439,7 +468,7 @@ component Sidebar inherits Rectangle {
             border-radius: 9px;
             background: touch.pressed ? #27303a : (touch.has-hover ? #20262d : transparent);
             HorizontalLayout {
-                padding-left: 8px;
+                padding-left: root.compact ? 10px : 8px;
                 spacing: 9px;
                 cross-axis-alignment: center;
                 Rectangle {
@@ -454,7 +483,7 @@ component Sidebar inherits Rectangle {
                         y: 3px;
                     }
                 }
-                Text {
+                if !root.compact: Text {
                     text: "TabletFlow";
                     color: AppTheme.text;
                     font-size: 15px;
@@ -473,34 +502,70 @@ component Sidebar inherits Rectangle {
             icon: "area";
             label: "Area";
             selected: root.active-page == "Area";
+            compact: root.compact;
             clicked => { root.navigate("Area"); }
         }
         NavItem {
             icon: "pen";
             label: "Pen";
             selected: root.active-page == "Pen";
+            compact: root.compact;
             clicked => { root.navigate("Pen"); }
         }
         NavItem {
             icon: "plugins";
             label: "Plugins";
             selected: root.active-page == "Plugins";
+            compact: root.compact;
             clicked => { root.navigate("Plugins"); }
         }
         NavItem {
             icon: "profiles";
             label: "Profiles";
             selected: root.active-page == "Profiles";
+            compact: root.compact;
             clicked => { root.navigate("Profiles"); }
         }
         NavItem {
             icon: "settings";
             label: "Settings";
             selected: root.active-page == "Settings";
+            compact: root.compact;
             clicked => { root.navigate("Settings"); }
         }
 
         Rectangle { vertical-stretch: 1; }
+
+        if root.compact || root.overlay: Rectangle {
+            height: AppTheme.nav-height;
+            border-radius: 10px;
+            background: toggle-touch.pressed ? #29313a : (toggle-touch.has-hover ? #20262d : transparent);
+
+            HorizontalLayout {
+                padding-left: root.compact ? 0px : 11px;
+                padding-right: root.compact ? 0px : 11px;
+                spacing: 10px;
+                alignment: root.compact ? center : start;
+                cross-axis-alignment: center;
+
+                Icon {
+                    name: "sidebar-toggle";
+                    tint: AppTheme.icon;
+                    width: 18px;
+                }
+                if !root.compact: Text {
+                    text: "Hide navigation";
+                    color: #b8c1cc;
+                    font-size: 13px;
+                    font-weight: 450;
+                    vertical-alignment: center;
+                }
+            }
+
+            toggle-touch := TouchArea {
+                clicked => { root.toggle-overlay(); }
+            }
+        }
     }
 
     Rectangle {
@@ -809,6 +874,54 @@ component ValueRow inherits Rectangle {
     }
 }
 
+component NumericField inherits Rectangle {
+    in property <string> label;
+    in-out property <string> value;
+    in property <bool> enabled: true;
+
+    height: AppTheme.row-height;
+    border-radius: 10px;
+    background: root.enabled ? AppTheme.surface : transparent;
+    border-width: root.enabled ? 1px : 0px;
+    border-color: AppTheme.line;
+    opacity: root.enabled ? 1.0 : 0.43;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 10px;
+        cross-axis-alignment: center;
+
+        Text {
+            text: root.label;
+            color: AppTheme.text-secondary;
+            font-size: 13px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+
+        Rectangle {
+            width: 100px;
+            height: 30px;
+            border-radius: 7px;
+            background: AppTheme.canvas;
+
+            TextInput {
+                text <=> root.value;
+                enabled: root.enabled;
+                color: AppTheme.text;
+                font-size: 12px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                single-line: true;
+                x: 8px;
+                width: parent.width - 16px;
+                height: parent.height;
+            }
+        }
+    }
+}
+
 component SwitchVisual inherits Rectangle {
     in property <bool> checked;
     in property <bool> enabled: true;
@@ -985,37 +1098,40 @@ component LinkButton inherits Rectangle {
 
 component AreaPreview inherits Rectangle {
     in property <bool> has-data;
+    in property <float> display-width: 152;
+    in property <float> display-height: 95;
 
-    min-width: 340px;
-    height: 292px;
+    width: 480px;
+    height: (root.width - 64px) * root.display-height / root.display-width + 62px;
     border-radius: 14px;
     background: AppTheme.surface;
     border-width: 1px;
     border-color: AppTheme.line;
 
+    Text {
+        text: "TABLET AREA";
+        x: 32px;
+        y: 11px;
+        color: AppTheme.text-muted;
+        font-size: 10px;
+        font-weight: 700;
+    }
+
     Rectangle {
-        x: 30px;
-        y: 30px;
-        width: parent.width - 60px;
-        height: parent.height - 60px;
+        x: 32px;
+        y: 28px;
+        width: parent.width - 64px;
+        height: parent.height - 62px;
         border-radius: 10px;
         background: AppTheme.surface-alt;
         border-width: 1px;
         border-color: AppTheme.line;
 
-        Text {
-            text: "TABLET AREA";
-            x: 14px;
-            y: 12px;
-            color: AppTheme.text-muted;
-            font-size: 10px;
-            font-weight: 700;
-        }
         if root.has-data: Rectangle {
-            x: 55px;
-            y: 48px;
-            width: parent.width - 110px;
-            height: parent.height - 96px;
+            x: 4px;
+            y: 4px;
+            width: parent.width - 8px;
+            height: parent.height - 8px;
             border-radius: 7px;
             background: AppTheme.accent-soft;
             border-width: 2px;
@@ -1043,7 +1159,7 @@ component AreaPreview inherits Rectangle {
     }
 
     Text {
-        text: root.has-data ? "Drag & resize" : "Not available yet";
+        text: root.has-data ? "Display proportions" : "Not available yet";
         color: AppTheme.text-muted;
         font-size: 11px;
         horizontal-alignment: center;
@@ -1056,13 +1172,16 @@ component AreaPreview inherits Rectangle {
 component AreaEditor inherits Rectangle {
     in property <string> device-name;
     in property <bool> has-data;
-    in property <string> area-width;
-    in property <string> area-height;
-    in property <string> area-x;
-    in property <string> area-y;
-    in property <string> area-rotation;
+    in property <float> display-width: 152;
+    in property <float> display-height: 95;
+    in-out property <string> area-width;
+    in-out property <string> area-height;
+    in-out property <string> area-x;
+    in-out property <string> area-y;
+    in-out property <string> area-rotation;
     property <bool> lock-aspect: false;
     callback retry-detection();
+    callback apply-area(string, string, string, string, string);
 
     background: AppTheme.canvas;
 
@@ -1085,7 +1204,8 @@ component AreaEditor inherits Rectangle {
 
             AreaPreview {
                 has-data: root.has-data;
-                horizontal-stretch: 3;
+                display-width: root.display-width;
+                display-height: root.display-height;
             }
 
             Rectangle {
@@ -1097,15 +1217,15 @@ component AreaEditor inherits Rectangle {
                         title: "Active area";
                         hint: root.has-data ? "" : "Not available yet";
                     }
-                    ValueRow { icon: "width"; label: "Width"; value: root.has-data ? root.area-width : "-"; enabled: root.has-data; }
+                    NumericField { label: "Width"; value <=> root.area-width; enabled: root.has-data; }
                     Divider {}
-                    ValueRow { icon: "height"; label: "Height"; value: root.has-data ? root.area-height : "-"; enabled: root.has-data; }
+                    NumericField { label: "Height"; value <=> root.area-height; enabled: root.has-data; }
                     Divider {}
-                    ValueRow { icon: "x"; label: "X"; value: root.has-data ? root.area-x : "-"; enabled: root.has-data; }
+                    NumericField { label: "X"; value <=> root.area-x; enabled: root.has-data; }
                     Divider {}
-                    ValueRow { icon: "y"; label: "Y"; value: root.has-data ? root.area-y : "-"; enabled: root.has-data; }
+                    NumericField { label: "Y"; value <=> root.area-y; enabled: root.has-data; }
                     Divider {}
-                    ValueRow { icon: "rotation"; label: "Rotation"; value: root.has-data ? root.area-rotation : "-"; enabled: root.has-data; }
+                    NumericField { label: "Rotation"; value <=> root.area-rotation; enabled: root.has-data; }
                     Divider {}
                     SwitchRow {
                         icon: "lock";
@@ -1119,9 +1239,14 @@ component AreaEditor inherits Rectangle {
                         spacing: 8px;
                         AppButton { label: "Center"; primary: false; enabled: false; }
                         AppButton { label: "Full area"; primary: false; enabled: false; }
-                        AppButton { label: "Apply"; primary: true; enabled: false; }
+                        AppButton {
+                            label: "Apply";
+                            primary: true;
+                            enabled: root.has-data;
+                            clicked => { root.apply-area(root.area-width, root.area-height, root.area-x, root.area-y, root.area-rotation); }
+                        }
                     }
-                    AvailabilityHint {}
+                    if !root.has-data: AvailabilityHint {}
                     Rectangle { vertical-stretch: 1; }
                     AppButton {
                         label: "Retry detection";
@@ -1138,22 +1263,30 @@ component AreaEditor inherits Rectangle {
 component AreaPage inherits Rectangle {
     in property <string> backend-state;
     in property <string> device-name;
-    in property <string> area-width;
-    in property <string> area-height;
-    in property <string> area-x;
-    in property <string> area-y;
-    in property <string> area-rotation;
+    in property <float> display-width: 152;
+    in property <float> display-height: 95;
+    in-out property <string> area-width;
+    in-out property <string> area-height;
+    in-out property <string> area-x;
+    in-out property <string> area-y;
+    in-out property <string> area-rotation;
     callback retry-detection();
+    callback apply-area(string, string, string, string, string, string);
 
     if root.backend-state == "ready" && root.device-name != "": AreaEditor {
         device-name: root.device-name;
         has-data: root.area-width != "" && root.area-height != "";
-        area-width: root.area-width;
-        area-height: root.area-height;
-        area-x: root.area-x;
-        area-y: root.area-y;
-        area-rotation: root.area-rotation;
+        display-width: root.display-width;
+        display-height: root.display-height;
+        area-width <=> root.area-width;
+        area-height <=> root.area-height;
+        area-x <=> root.area-x;
+        area-y <=> root.area-y;
+        area-rotation <=> root.area-rotation;
         retry-detection => { root.retry-detection(); }
+        apply-area(width, height, x, y, rotation) => {
+            root.apply-area(root.device-name, width, height, x, y, rotation);
+        }
     }
     if root.backend-state != "ready" || root.device-name == "": EmptyState {
         icon: "area";
@@ -1646,9 +1779,13 @@ export component MainWindow inherits Window {
     min-height: 500px;
 
     in-out property <string> active-page: "Overview";
+    in-out property <bool> sidebar-compact: true;
+    in-out property <bool> sidebar-overlay-open: false;
     in-out property <string> backend-state: "unknown";
     in-out property <string> device-name: "";
     in-out property <string> active-profile: "";
+    in-out property <float> area-preview-width: 152;
+    in-out property <float> area-preview-height: 95;
     in-out property <string> area-width: "";
     in-out property <string> area-height: "";
     in-out property <string> area-x: "";
@@ -1672,8 +1809,16 @@ export component MainWindow inherits Window {
     callback navigate(string);
     callback start-daemon();
     callback retry-backend();
+    callback apply-area(string, string, string, string, string, string);
     callback open-github();
     callback settings-changed();
+
+    changed width => {
+        root.sidebar-compact = root.width < 1500px;
+        if root.width >= 1500px {
+            root.sidebar-overlay-open = false;
+        }
+    }
 
     Rectangle {
         width: parent.width;
@@ -1684,7 +1829,14 @@ export component MainWindow inherits Window {
             spacing: 0px;
             Sidebar {
                 active-page: root.active-page;
-                navigate(page) => { root.navigate(page); }
+                compact: root.sidebar-compact;
+                navigate(page) => {
+                    root.sidebar-overlay-open = false;
+                    root.navigate(page);
+                }
+                toggle-overlay => {
+                    root.sidebar-overlay-open = !root.sidebar-overlay-open;
+                }
             }
             Rectangle {
                 horizontal-stretch: 1;
@@ -1741,12 +1893,17 @@ export component MainWindow inherits Window {
                 if root.active-page == "Area": AreaPage {
                     backend-state: root.backend-state;
                     device-name: root.device-name;
-                    area-width: root.area-width;
-                    area-height: root.area-height;
-                    area-x: root.area-x;
-                    area-y: root.area-y;
-                    area-rotation: root.area-rotation;
+                    display-width: root.area-preview-width;
+                    display-height: root.area-preview-height;
+                    area-width <=> root.area-width;
+                    area-height <=> root.area-height;
+                    area-x <=> root.area-x;
+                    area-y <=> root.area-y;
+                    area-rotation <=> root.area-rotation;
                     retry-detection => { root.retry-backend(); }
+                    apply-area(tablet, width, height, x, y, rotation) => {
+                        root.apply-area(tablet, width, height, x, y, rotation);
+                    }
                 }
                 if root.active-page == "Pen": PenPage {
                     backend-state: root.backend-state;
@@ -1778,6 +1935,22 @@ export component MainWindow inherits Window {
                     page-title: "Bindings";
                     message: root.backend-state == "unknown" ? "" : (root.backend-state == "daemon-not-running" ? "OpenTabletDriver is not running" : (root.backend-state == "daemon-running" ? "Waiting for tablet detection" : (root.backend-state == "no-tablet" ? "Connect a tablet to continue." : "")));
                 }
+            }
+        }
+
+        if root.sidebar-compact && root.sidebar-overlay-open: Sidebar {
+            x: 0px;
+            y: 0px;
+            height: parent.height;
+            active-page: root.active-page;
+            compact: false;
+            overlay: true;
+            navigate(page) => {
+                root.sidebar-overlay-open = false;
+                root.navigate(page);
+            }
+            toggle-overlay => {
+                root.sidebar-overlay-open = false;
             }
         }
     }

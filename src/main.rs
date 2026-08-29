@@ -1,14 +1,471 @@
 slint::include_modules!();
 
-use slint::{CloseRequestResponse, ComponentHandle, Timer, TimerMode};
+use serde_json::{json, Value};
+use slint::{CloseRequestResponse, ComponentHandle};
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
+use std::thread;
 use std::time::Duration;
 
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+
 static EMBEDDED_DAEMON: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+static BACKEND_RETRY: AtomicBool = AtomicBool::new(false);
+
+const DAEMON_PIPE_NAME: &str = "OpenTabletDriver.Daemon";
+
+enum DaemonStream {
+    #[cfg(unix)]
+    Unix(UnixStream),
+    #[cfg(windows)]
+    Windows(std::fs::File),
+}
+
+impl Read for DaemonStream {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(stream) => stream.read(buffer),
+            #[cfg(windows)]
+            Self::Windows(stream) => stream.read(buffer),
+        }
+    }
+}
+
+impl Write for DaemonStream {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(stream) => stream.write(buffer),
+            #[cfg(windows)]
+            Self::Windows(stream) => stream.write(buffer),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(stream) => stream.flush(),
+            #[cfg(windows)]
+            Self::Windows(stream) => stream.flush(),
+        }
+    }
+}
+
+struct DaemonClient {
+    stream: DaemonStream,
+    next_id: u64,
+}
+
+impl DaemonClient {
+    fn connect() -> io::Result<Self> {
+        #[cfg(unix)]
+        let stream = {
+            let stream = UnixStream::connect(
+                std::env::temp_dir().join(format!("CoreFxPipe_{DAEMON_PIPE_NAME}")),
+            )?;
+            stream.set_read_timeout(Some(Duration::from_secs(45)))?;
+            stream.set_write_timeout(Some(Duration::from_secs(15)))?;
+            DaemonStream::Unix(stream)
+        };
+
+        #[cfg(windows)]
+        let stream = DaemonStream::Windows(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(format!(r"\\.\pipe\{DAEMON_PIPE_NAME}"))?,
+        );
+
+        Ok(Self { stream, next_id: 1 })
+    }
+
+    fn call(&mut self, method: &str, params: Value) -> io::Result<Value> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let body = serde_json::to_vec(&json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        }))
+        .map_err(io::Error::other)?;
+        let header = format!("Content-Length: {}\r\n\r\n", body.len());
+        self.stream.write_all(header.as_bytes())?;
+        self.stream.write_all(&body)?;
+        self.stream.flush()?;
+
+        loop {
+            let response = read_rpc_message(&mut self.stream)?;
+            if response.get("id") == Some(&json!(id)) {
+                if let Some(error) = response.get("error") {
+                    return Err(io::Error::other(error.to_string()));
+                }
+                return response
+                    .get("result")
+                    .cloned()
+                    .ok_or_else(|| io::Error::other("RPC response has no result"));
+            }
+        }
+    }
+}
+
+fn read_rpc_message(stream: &mut DaemonStream) -> io::Result<Value> {
+    let mut headers = Vec::new();
+    let mut delimiter = Vec::new();
+    loop {
+        let mut byte = [0u8; 1];
+        stream.read_exact(&mut byte)?;
+        headers.push(byte[0]);
+        delimiter.push(byte[0]);
+        if delimiter.ends_with(b"\r\n\r\n") || delimiter.ends_with(b"\n\n") {
+            break;
+        }
+        if delimiter.len() > 4 {
+            delimiter.remove(0);
+        }
+        if headers.len() > 8192 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "RPC headers are too large",
+            ));
+        }
+    }
+
+    let headers = String::from_utf8_lossy(&headers);
+    let content_length = headers
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "RPC content length missing"))?;
+
+    let mut body = vec![0u8; content_length];
+    stream.read_exact(&mut body)?;
+    serde_json::from_slice(&body).map_err(io::Error::other)
+}
+
+#[derive(Default)]
+struct BackendSnapshot {
+    state: &'static str,
+    device_name: String,
+    preview_width: f32,
+    preview_height: f32,
+    area_width: String,
+    area_height: String,
+    area_x: String,
+    area_y: String,
+    area_rotation: String,
+    pen_data_available: bool,
+}
+
+enum BackendCommand {
+    Detect,
+    ApplyArea {
+        tablet_name: String,
+        width: String,
+        height: String,
+        x: String,
+        y: String,
+        rotation: String,
+    },
+}
+
+fn json_member<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
+    value
+        .get(name)
+        .or_else(|| value.get(name[..1].to_ascii_lowercase() + &name[1..]))
+}
+
+fn json_member_mut<'a>(value: &'a mut Value, name: &str) -> Option<&'a mut Value> {
+    let lower_name = name[..1].to_ascii_lowercase() + &name[1..];
+    if value.get(name).is_some() {
+        value.get_mut(name)
+    } else {
+        value.get_mut(&lower_name)
+    }
+}
+
+fn json_string(value: &Value, name: &str) -> Option<String> {
+    json_member(value, name)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn json_number_string(value: &Value, name: &str) -> String {
+    let Some(number) = json_member(value, name).and_then(Value::as_f64) else {
+        return String::new();
+    };
+    if number.fract() == 0.0 {
+        format!("{number:.0}")
+    } else {
+        format!("{number:.2}")
+    }
+}
+
+fn tablet_from_result(result: &Value) -> Option<(String, Value)> {
+    let tablet = result.as_array()?.first()?;
+    let properties = json_member(tablet, "Properties")?;
+    let name = json_string(properties, "Name")?;
+    Some((name, tablet.clone()))
+}
+
+fn settings_for_tablet(settings: &Value, tablet_name: &str) -> Option<Value> {
+    let profiles = json_member(settings, "Profiles")?.as_array()?;
+    profiles.iter().find_map(|profile| {
+        (json_string(profile, "Tablet").as_deref() == Some(tablet_name)).then(|| profile.clone())
+    })
+}
+
+fn query_backend(client: &mut DaemonClient, detect: bool) -> io::Result<BackendSnapshot> {
+    let tablets = if detect {
+        client.call("DetectTablets", json!([]))?
+    } else {
+        client.call("GetTablets", json!([]))?
+    };
+    let Some((device_name, _tablet)) = tablet_from_result(&tablets) else {
+        return Ok(BackendSnapshot {
+            state: "no-tablet",
+            ..Default::default()
+        });
+    };
+
+    let mut snapshot = BackendSnapshot {
+        state: "ready",
+        device_name: device_name.clone(),
+        preview_width: 152.0,
+        preview_height: 95.0,
+        ..Default::default()
+    };
+    if let Ok(settings) = client.call("GetSettings", json!([])) {
+        if let Some(profile) = settings_for_tablet(&settings, &device_name) {
+            if let Some(absolute) = json_member(&profile, "AbsoluteModeSettings") {
+                if let Some(display_area) = json_member(absolute, "Display") {
+                    let width = json_member(display_area, "Width").and_then(Value::as_f64);
+                    let height = json_member(display_area, "Height").and_then(Value::as_f64);
+                    if let (Some(width), Some(height)) = (width, height) {
+                        let aspect = width / height;
+                        if aspect.is_finite() && aspect > 0.1 && aspect < 10.0 {
+                            snapshot.preview_width = (width / 10.0) as f32;
+                            snapshot.preview_height = (height / 10.0) as f32;
+                        }
+                    }
+                }
+                if let Some(tablet_area) = json_member(absolute, "Tablet") {
+                    snapshot.area_width = json_number_string(tablet_area, "Width");
+                    snapshot.area_height = json_number_string(tablet_area, "Height");
+                    snapshot.area_x = json_number_string(tablet_area, "X");
+                    snapshot.area_y = json_number_string(tablet_area, "Y");
+                    snapshot.area_rotation = json_number_string(tablet_area, "Rotation");
+                }
+            }
+            snapshot.pen_data_available = true;
+        }
+    }
+    Ok(snapshot)
+}
+
+fn apply_area(client: &mut DaemonClient, command: BackendCommand) -> io::Result<()> {
+    let BackendCommand::ApplyArea {
+        tablet_name,
+        width,
+        height,
+        x,
+        y,
+        rotation,
+    } = command
+    else {
+        return Ok(());
+    };
+
+    let mut settings = client.call("GetSettings", json!([]))?;
+    let profiles = json_member_mut(&mut settings, "Profiles")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Profiles missing"))?;
+    let profile = profiles
+        .iter_mut()
+        .find(|profile| json_string(profile, "Tablet").as_deref() == Some(&tablet_name))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Tablet profile missing"))?;
+    let area = json_member_mut(profile, "AbsoluteModeSettings")
+        .and_then(|absolute| json_member_mut(absolute, "Tablet"))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Tablet area missing"))?;
+
+    for (name, value) in [
+        ("Width", width),
+        ("Height", height),
+        ("X", x),
+        ("Y", y),
+        ("Rotation", rotation),
+    ] {
+        let number = value.parse::<f64>().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Invalid area value for {name}"),
+            )
+        })?;
+        if !number.is_finite() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Invalid area value for {name}"),
+            ));
+        }
+        let Some(field) = json_member_mut(area, name) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Area field {name} missing"),
+            ));
+        };
+        *field = json!(number);
+    }
+
+    let _ = client.call("SetSettings", json!([settings]))?;
+    Ok(())
+}
+
+fn publish_backend_snapshot(ui: &MainWindow, snapshot: BackendSnapshot) {
+    ui.set_backend_state(snapshot.state.into());
+    ui.set_device_name(snapshot.device_name.into());
+    ui.set_area_preview_width(snapshot.preview_width);
+    ui.set_area_preview_height(snapshot.preview_height);
+    ui.set_area_width(snapshot.area_width.into());
+    ui.set_area_height(snapshot.area_height.into());
+    ui.set_area_x(snapshot.area_x.into());
+    ui.set_area_y(snapshot.area_y.into());
+    ui.set_area_rotation(snapshot.area_rotation.into());
+    ui.set_pen_data_available(snapshot.pen_data_available);
+}
+
+fn start_backend_worker(ui: slint::Weak<MainWindow>) -> Sender<BackendCommand> {
+    let (command_sender, command_receiver) = mpsc::channel();
+    thread::spawn(move || {
+        backend_worker(ui, command_receiver);
+    });
+    command_sender
+}
+
+fn backend_worker(ui: slint::Weak<MainWindow>, command_receiver: Receiver<BackendCommand>) {
+    let mut client = None;
+    let mut detect_requested = false;
+    let mut last_ipc_error = String::new();
+    #[cfg(debug_assertions)]
+    let mut last_backend_status = String::new();
+
+    loop {
+        if !daemon_is_running() {
+            client = None;
+            detect_requested = false;
+            last_ipc_error.clear();
+            let weak_ui = ui.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = weak_ui.upgrade() {
+                    ui.set_backend_state("daemon-not-running".into());
+                    ui.set_device_name("".into());
+                    ui.set_pen_data_available(false);
+                }
+            });
+            while command_receiver.try_recv().is_ok() {}
+            thread::sleep(Duration::from_millis(1200));
+            continue;
+        }
+
+        while let Ok(command) = command_receiver.try_recv() {
+            match command {
+                BackendCommand::Detect => detect_requested = true,
+                command @ BackendCommand::ApplyArea { .. } => {
+                    if let Some(connection) = client.as_mut() {
+                        if apply_area(connection, command).is_err() {
+                            client = None;
+                        }
+                    }
+                }
+            }
+        }
+
+        if client.is_none() {
+            match DaemonClient::connect() {
+                Ok(connection) => {
+                    client = Some(connection);
+                    last_ipc_error.clear();
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    if message != last_ipc_error {
+                        eprintln!("OpenTabletDriver IPC connection failed: {message}");
+                        last_ipc_error = message;
+                    }
+                    let weak_ui = ui.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = weak_ui.upgrade() {
+                            ui.set_backend_state("daemon-running".into());
+                        }
+                    });
+                    thread::sleep(Duration::from_millis(1200));
+                    continue;
+                }
+            }
+        }
+
+        let detect =
+            std::mem::take(&mut detect_requested) || BACKEND_RETRY.swap(false, Ordering::Relaxed);
+        let result = client
+            .as_mut()
+            .map(|connection| query_backend(connection, detect));
+
+        if let Some(Ok(snapshot)) = result {
+            last_ipc_error.clear();
+            #[cfg(debug_assertions)]
+            {
+                let status = format!("{}:{}", snapshot.state, snapshot.device_name);
+                if status != last_backend_status {
+                    eprintln!(
+                        "OpenTabletDriver backend: state={}, device={}",
+                        snapshot.state,
+                        if snapshot.device_name.is_empty() {
+                            "none"
+                        } else {
+                            &snapshot.device_name
+                        }
+                    );
+                    last_backend_status = status;
+                }
+            }
+            let weak_ui = ui.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = weak_ui.upgrade() {
+                    publish_backend_snapshot(&ui, snapshot);
+                }
+            });
+        } else {
+            if let Some(Err(error)) = result {
+                let message = error.to_string();
+                if message != last_ipc_error {
+                    eprintln!("OpenTabletDriver IPC request failed: {message}");
+                    last_ipc_error = message;
+                }
+            }
+            client = None;
+            let weak_ui = ui.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = weak_ui.upgrade() {
+                    ui.set_backend_state("daemon-running".into());
+                    ui.set_device_name("".into());
+                    ui.set_pen_data_available(false);
+                }
+            });
+        }
+
+        thread::sleep(Duration::from_millis(1200));
+    }
+}
 
 #[derive(Clone, Debug)]
 struct Settings {
@@ -220,6 +677,8 @@ fn configure_autostart(enabled: bool, start_minimized: bool) -> io::Result<()> {
                     &format!("gui/{}", current_uid()),
                     path.to_string_lossy().as_ref(),
                 ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .status();
             if path.exists() {
                 fs::remove_file(path)?;
@@ -250,6 +709,8 @@ fn configure_autostart(enabled: bool, start_minimized: bool) -> io::Result<()> {
                 &format!("gui/{}", current_uid()),
                 path.to_string_lossy().as_ref(),
             ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status();
         let _ = Command::new("launchctl")
             .args([
@@ -257,6 +718,8 @@ fn configure_autostart(enabled: bool, start_minimized: bool) -> io::Result<()> {
                 &format!("gui/{}", current_uid()),
                 path.to_string_lossy().as_ref(),
             ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status();
         return Ok(());
     }
@@ -339,6 +802,29 @@ fn daemon_process() -> &'static Mutex<Option<Child>> {
 fn daemon_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
+    #[cfg(debug_assertions)]
+    {
+        let runtime_id = match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("macos", "aarch64") => Some("osx-arm64"),
+            ("macos", "x86_64") => Some("osx-x64"),
+            ("windows", "aarch64") => Some("win-arm64"),
+            ("windows", "x86_64") => Some("win-x64"),
+            ("windows", "x86") => Some("win-x86"),
+            ("linux", "aarch64") => Some("linux-arm64"),
+            ("linux", "x86_64") => Some("linux-x64"),
+            ("linux", "x86") => Some("linux-x86"),
+            _ => None,
+        };
+        if let Some(runtime_id) = runtime_id {
+            let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("target/otd")
+                .join(runtime_id);
+            candidates.push(directory.join("OpenTabletDriver.Daemon"));
+            candidates.push(directory.join("OpenTabletDriver.Daemon.exe"));
+            candidates.push(directory.join("OpenTabletDriver.Daemon.dll"));
+        }
+    }
+
     if let Ok(executable) = std::env::current_exe() {
         if let Some(directory) = executable.parent() {
             candidates.push(directory.join("OpenTabletDriver.Daemon"));
@@ -408,8 +894,8 @@ fn daemon_is_running() -> bool {
     {
         Command::new("pgrep")
             .args(["-f", "OpenTabletDriver.Daemon"])
-            .status()
-            .map(|status| status.success())
+            .output()
+            .map(|output| output.status.success())
             .unwrap_or(false)
     }
 }
@@ -500,17 +986,7 @@ fn main() -> Result<(), slint::PlatformError> {
         backend_state().into()
     });
 
-    let daemon_timer = Timer::default();
-    let weak_ui = ui.as_weak();
-    daemon_timer.start(
-        TimerMode::Repeated,
-        Duration::from_millis(1200),
-        move || {
-            if let Some(ui) = weak_ui.upgrade() {
-                ui.set_backend_state(backend_state().into());
-            }
-        },
-    );
+    let backend_commands = start_backend_worker(ui.as_weak());
 
     let tray = TrayIcon::new()?;
     set_tray_visible(&tray, settings.close_to_tray);
@@ -544,14 +1020,20 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     let weak_ui = ui.as_weak();
+    let retry_commands = backend_commands.clone();
     ui.on_retry_backend(move || {
+        BACKEND_RETRY.store(true, Ordering::Relaxed);
+        let _ = retry_commands.send(BackendCommand::Detect);
         if let Some(ui) = weak_ui.upgrade() {
             ui.set_backend_state(backend_state().into());
         }
     });
 
     let weak_ui = ui.as_weak();
+    let start_commands = backend_commands.clone();
     ui.on_start_daemon(move || {
+        BACKEND_RETRY.store(true, Ordering::Relaxed);
+        let _ = start_commands.send(BackendCommand::Detect);
         if let Some(ui) = weak_ui.upgrade() {
             ui.set_backend_state(if start_daemon() {
                 "daemon-starting".into()
@@ -559,6 +1041,18 @@ fn main() -> Result<(), slint::PlatformError> {
                 "daemon-not-running".into()
             });
         }
+    });
+
+    let apply_commands = backend_commands.clone();
+    ui.on_apply_area(move |tablet, width, height, x, y, rotation| {
+        let _ = apply_commands.send(BackendCommand::ApplyArea {
+            tablet_name: tablet.to_string(),
+            width: width.to_string(),
+            height: height.to_string(),
+            x: x.to_string(),
+            y: y.to_string(),
+            rotation: rotation.to_string(),
+        });
     });
 
     let weak_ui = ui.as_weak();

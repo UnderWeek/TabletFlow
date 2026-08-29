@@ -4675,6 +4675,7 @@ dependencies = [
 name = "tabletflow"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "slint",
  "slint-build",
 ]
