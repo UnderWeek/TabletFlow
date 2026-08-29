@@ -39,9 +39,11 @@ TabletFlow provides a clear overview, precise active-area editing and dependable
 ## 🎯 Current scope
 
 - 🏠 **Overview** with OpenTabletDriver and connected-tablet status
-- 📐 **Active area** with a visual draft, exact values and inline input checks
+- 📐 **Active area** with a visual draft, exact values, drag-to-position editing and inline input checks
+- 🖥️ **Display mapping** for choosing the target monitor on multi-display setups
 - ✅ Applying format-checked area changes and confirming the values read back from OpenTabletDriver
-- ⚙️ **Settings** for appearance, startup and background behavior
+- 🎨 **Settings** with three accent presets, custom background/highlight colors and startup controls
+- 🔐 macOS permission checks for Input Monitoring and Accessibility
 - 🔌 IPC connection, tablet detection and configuration reading
 
 ## 📐 Active area editor
@@ -67,7 +69,8 @@ The editor currently provides:
 - exact width, height, X, Y and rotation values
 - millimetre and degree units
 - inline input checks before Apply becomes available
-- a preview driven by the current draft
+- a preview driven by the current draft, with direct area dragging
+- target-monitor selection, including multiple displays
 - Revert for discarding local changes
 - confirmation after OpenTabletDriver reports the applied values
 
@@ -87,9 +90,11 @@ The editor currently provides:
 - [x] Read the current active-area configuration
 - [x] Check draft values and apply active-area changes
 - [x] Confirm applied values from OpenTabletDriver
-- [ ] Direct drag and resize in the area preview
+- [x] Direct drag-to-position editing in the area preview
 - [ ] Center, full-area and aspect-ratio controls
-- [ ] Display mapping
+- [x] Display mapping
+- [x] Custom background and highlight palette
+- [x] macOS permission status and request flow
 - [ ] Pen configuration
 - [ ] Bindings
 - [ ] Profiles
@@ -131,7 +136,7 @@ The OpenTabletDriver daemon is bundled inside the application and starts with Ta
 
 If macOS says that TabletFlow is damaged, the application is blocked by Gatekeeper rather than actually corrupted. Repeat the `xattr` command, then right-click `TabletFlow.app` in Applications and choose **Open**.
 
-The current ARM64 build is distributed without an Apple Developer signature, so this one-time approval is expected. If macOS requests tablet permissions, grant them in **System Settings → Privacy & Security**.
+The current ARM64 build is distributed without an Apple Developer signature, so this one-time approval is expected. TabletFlow checks **Input Monitoring** and **Accessibility** on launch; if either is missing, it opens the relevant **System Settings → Privacy & Security** pane and shows the live status in Settings.
 
 ## 🔧 Development
 
@@ -142,7 +147,7 @@ cargo run
 cargo build --release
 ```
 
-The current application includes Overview, format-checked draft editing for the active area, and Settings. Device and area values remain unavailable until they are supplied by the OpenTabletDriver backend.
+The current application includes Overview, a draggable active-area editor with display mapping, a custom color palette and Settings. Device and area values remain unavailable until they are supplied by the OpenTabletDriver backend.
 
 ```bash
 git clone https://github.com/UnderWeek/TabletFlow.git

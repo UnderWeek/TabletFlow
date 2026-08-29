@@ -17,6 +17,7 @@ export global AppTheme {
     out property <color> custom-background-color: Colors.hsv(custom-background-hue, custom-background-saturation, custom-background-value);
     out property <color> custom-accent-color: Colors.hsv(custom-accent-hue, custom-accent-saturation, custom-accent-value);
     out property <bool> custom-background-light: custom-background-color.red * 0.299 + custom-background-color.green * 0.587 + custom-background-color.blue * 0.114 > 145;
+    out property <bool> custom-accent-light: custom-accent-color.red * 0.299 + custom-accent-color.green * 0.587 + custom-accent-color.blue * 0.114 > 145;
     out property <bool> effective-light: custom-colors ? custom-background-light : light;
     // One cool-neutral design system keeps light and dark mode visually related.
     out property <color> canvas: custom-colors ? custom-background-color : (light ? #f3f5f7 : #0d1116);
@@ -43,10 +44,14 @@ export global AppTheme {
     out property <color> accent-color: custom-colors ? custom-accent-color : (accent == "Amber" ? (light ? #8a642f : #d2a86f) : (accent == "Mint" ? (light ? #3f7b64 : #91c3ac) : (light ? #456f9b : #8eb4df)));
     out property <color> accent-soft: custom-colors ? (effective-light ? custom-accent-color.with-alpha(0.16) : custom-accent-color.with-alpha(0.24)) : (accent == "Amber" ? (light ? #eee3d3 : #3b3225) : (accent == "Mint" ? (light ? #dcebe4 : #233a32) : (light ? #dce7f2 : #25364a)));
     out property <color> accent-pressed: custom-colors ? (effective-light ? custom-accent-color.darker(0.16) : custom-accent-color.brighter(0.10)) : (accent == "Amber" ? (light ? #735126 : #ad824c) : (accent == "Mint" ? (light ? #32624f : #6f9f8b) : (light ? #36597d : #7195bf)));
-    out property <color> accent-on: effective-light ? #ffffff : #10171f;
-    out property <brush> hero-fill: effective-light
-        ? @linear-gradient(135deg, #ffffff 0%, #e8eff5 100%)
-        : @linear-gradient(135deg, #1d252e 0%, #172536 100%);
+    out property <color> accent-on: custom-colors ? (custom-accent-light ? #10171f : #ffffff) : (effective-light ? #ffffff : #10171f);
+    out property <brush> hero-fill: custom-colors
+        ? (effective-light
+            ? @linear-gradient(135deg, custom-background-color.brighter(0.16) 0%, custom-background-color.brighter(0.04) 100%)
+            : @linear-gradient(135deg, custom-background-color.brighter(0.18) 0%, custom-background-color.brighter(0.07) 100%))
+        : (effective-light
+            ? @linear-gradient(135deg, #ffffff 0%, #e8eff5 100%)
+            : @linear-gradient(135deg, #1d252e 0%, #172536 100%));
 
     out property <length> row-height: compact ? 44px : 50px;
     out property <length> nav-height: compact ? 38px : 42px;
@@ -403,6 +408,66 @@ component Icon inherits Rectangle {
         border-width: 1px;
         border-color: root.tint;
     }
+    if root.name == "palette": Rectangle {
+        x: 2px;
+        y: 3px;
+        width: 14px;
+        height: 12px;
+        border-radius: 7px;
+        border-width: 1px;
+        border-color: root.tint;
+    }
+    if root.name == "palette": Rectangle {
+        x: 4px;
+        y: 5px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "palette": Rectangle {
+        x: 10px;
+        y: 5px;
+        width: 3px;
+        height: 3px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "palette": Rectangle {
+        x: 7px;
+        y: 10px;
+        width: 3px;
+        height: 3px;
+        border-radius: 2px;
+        background: root.tint;
+    }
+    if root.name == "permissions": Rectangle {
+        x: 3px;
+        y: 7px;
+        width: 12px;
+        height: 9px;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: root.tint;
+    }
+    if root.name == "permissions": Rectangle {
+        x: 6px;
+        y: 2px;
+        width: 6px;
+        height: 8px;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: root.tint;
+        background: transparent;
+    }
+    if root.name == "permissions": Rectangle {
+        x: 8px;
+        y: 10px;
+        width: 2px;
+        height: 3px;
+        border-radius: 1px;
+        background: root.tint;
+    }
 }
 
 component AppButton inherits Rectangle {
@@ -443,7 +508,7 @@ component AppButton inherits Rectangle {
         width: parent.width - 20px;
         height: 1px;
         border-radius: 1px;
-        background: root.primary ? #ffffff35 : (AppTheme.light ? #ffffffc0 : #ffffff18);
+        background: root.primary ? #ffffff35 : (AppTheme.effective-light ? #ffffffc0 : #ffffff18);
     }
 
     Text {
@@ -1541,7 +1606,7 @@ component ColorOption inherits Rectangle {
             height: 18px;
             border-radius: 9px;
             border-width: 2px;
-            border-color: AppTheme.accent-on;
+            border-color: AppTheme.effective-light ? #17222c : #f2f5f8;
             background: transparent;
         }
     }
@@ -1801,7 +1866,7 @@ component MonitorOption inherits Rectangle {
 
 component MonitorPicker inherits Rectangle {
     in property <[string]> options: [];
-    in-out property <int> selected-index: 0;
+    in-out property <int> selected-index: -1;
     callback changed();
 
     height: AppTheme.compact ? 70px : 76px;
@@ -1816,7 +1881,7 @@ component MonitorPicker inherits Rectangle {
             font-weight: 600;
         }
         Text {
-            text: "Choose where the tablet pointer should appear";
+            text: root.selected-index < 0 ? "Current mapping spans all displays · choose one to limit it" : "Choose where the tablet pointer should appear";
             color: AppTheme.text-muted;
             font-size: 10px;
         }
@@ -1880,8 +1945,10 @@ component AreaPreview inherits Rectangle {
         let area-px-height = active-area.height;
         let area-left = max(0px, min(stage.width - area-px-width, stage-touch.mouse-x - root.drag-offset-x));
         let area-top = max(0px, min(stage.height - area-px-height, stage-touch.mouse-y - root.drag-offset-y));
-        root.area-x = ((area-left + area-px-width / 2) / stage.width * root.tablet-width) + "";
-        root.area-y = ((area-top + area-px-height / 2) / stage.height * root.tablet-height) + "";
+        let stage-width = stage.width / 1px;
+        let stage-height = stage.height / 1px;
+        root.area-x = (((area-left + area-px-width / 2) / 1px) / stage-width * root.tablet-width).to-fixed(2);
+        root.area-y = (((area-top + area-px-height / 2) / 1px) / stage-height * root.tablet-height).to-fixed(2);
         root.position-edited();
     }
 
@@ -1922,7 +1989,8 @@ component AreaPreview inherits Rectangle {
             border-color: AppTheme.line-strong;
             clip: true;
 
-            if root.has-data && root.values-valid: Rectangle {
+            active-area := Rectangle {
+                visible: root.has-data && root.values-valid;
                 property <float> area-width-ratio: root.area-width.to-float() / max(0.1, root.tablet-width);
                 property <float> area-height-ratio: root.area-height.to-float() / max(0.1, root.tablet-height);
                 width: max(28px, min(parent.width - 8px, parent.width * self.area-width-ratio));
@@ -2032,7 +2100,7 @@ component AreaControls inherits Rectangle {
     in-out property <string> draft-x;
     in-out property <string> draft-y;
     in-out property <string> draft-rotation;
-    in-out property <int> monitor-index: 0;
+    in-out property <int> monitor-index: -1;
     in property <[string]> monitor-options: [];
     in-out property <bool> dirty;
     in-out property <string> apply-state;
@@ -2195,6 +2263,10 @@ component AreaEditor inherits Rectangle {
     in property <bool> has-data;
     in property <float> display-width: 152;
     in property <float> display-height: 95;
+    in property <float> tablet-width: 152;
+    in property <float> tablet-height: 95;
+    in property <int> monitor-index: -1;
+    in property <[string]> monitor-options: [];
     in property <string> area-width;
     in property <string> area-height;
     in property <string> area-x;
@@ -2205,6 +2277,7 @@ component AreaEditor inherits Rectangle {
     property <string> draft-x: root.area-x;
     property <string> draft-y: root.area-y;
     property <string> draft-rotation: root.area-rotation;
+    property <int> draft-monitor-index: root.monitor-index;
     property <bool> dirty: false;
     property <string> apply-state: "idle";
     property <bool> values-valid: root.draft-width.is-float() && root.draft-width.to-float() > 0
@@ -2212,7 +2285,7 @@ component AreaEditor inherits Rectangle {
         && root.draft-x.is-float() && root.draft-y.is-float()
         && root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360;
     callback retry-detection();
-    callback apply-area(string, string, string, string, string);
+    callback apply-area(string, string, string, string, string, int);
 
     pure function same-number(a: string, b: string) -> bool {
         return a.is-float() && b.is-float() && abs(a.to-float() - b.to-float()) < 0.005;
@@ -2224,7 +2297,8 @@ component AreaEditor inherits Rectangle {
                 && root.same-number(root.area-height, root.draft-height)
                 && root.same-number(root.area-x, root.draft-x)
                 && root.same-number(root.area-y, root.draft-y)
-                && root.same-number(root.area-rotation, root.draft-rotation) {
+                && root.same-number(root.area-rotation, root.draft-rotation)
+                && root.monitor-index == root.draft-monitor-index {
                 root.apply-state = "confirmed";
                 root.dirty = false;
                 apply-timeout.stop();
@@ -2235,6 +2309,7 @@ component AreaEditor inherits Rectangle {
             root.draft-x = root.area-x;
             root.draft-y = root.area-y;
             root.draft-rotation = root.area-rotation;
+            root.draft-monitor-index = root.monitor-index;
             root.apply-state = "idle";
         }
     }
@@ -2245,6 +2320,7 @@ component AreaEditor inherits Rectangle {
         root.draft-x = root.area-x;
         root.draft-y = root.area-y;
         root.draft-rotation = root.area-rotation;
+        root.draft-monitor-index = root.monitor-index;
         root.dirty = false;
         root.apply-state = "idle";
         apply-timeout.stop();
@@ -2255,6 +2331,7 @@ component AreaEditor inherits Rectangle {
     changed area-x => { root.sync-from-source(); }
     changed area-y => { root.sync-from-source(); }
     changed area-rotation => { root.sync-from-source(); }
+    changed monitor-index => { root.sync-from-source(); }
     changed device-name => { root.revert-draft(); }
 
     apply-timeout := Timer {
@@ -2297,10 +2374,15 @@ component AreaEditor inherits Rectangle {
                         has-data: root.has-data;
                         display-width: root.display-width;
                         display-height: root.display-height;
+                        tablet-width: root.tablet-width;
+                        tablet-height: root.tablet-height;
                         area-width: root.draft-width;
                         area-height: root.draft-height;
+                        area-x <=> root.draft-x;
+                        area-y <=> root.draft-y;
                         area-rotation: root.draft-rotation;
                         values-valid: root.values-valid;
+                        position-edited => { root.dirty = true; root.apply-state = "idle"; }
                     }
                     AreaControls {
                         draft-width <=> root.draft-width;
@@ -2308,19 +2390,23 @@ component AreaEditor inherits Rectangle {
                         draft-x <=> root.draft-x;
                         draft-y <=> root.draft-y;
                         draft-rotation <=> root.draft-rotation;
+                        monitor-index <=> root.draft-monitor-index;
+                        monitor-options: root.monitor-options;
                         dirty <=> root.dirty;
                         apply-state <=> root.apply-state;
                         edited => { root.dirty = true; root.apply-state = "idle"; }
+                        monitor-edited => { root.dirty = true; root.apply-state = "idle"; }
                         revert => { root.revert-draft(); }
                         refresh => { root.revert-draft(); root.retry-detection(); }
                         apply => {
                             root.apply-state = "waiting";
-                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation);
+                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-monitor-index);
                             if root.same-number(root.area-width, root.draft-width)
                                 && root.same-number(root.area-height, root.draft-height)
                                 && root.same-number(root.area-x, root.draft-x)
                                 && root.same-number(root.area-y, root.draft-y)
-                                && root.same-number(root.area-rotation, root.draft-rotation) {
+                                && root.same-number(root.area-rotation, root.draft-rotation)
+                                && root.monitor-index == root.draft-monitor-index {
                                 root.apply-state = "confirmed";
                                 root.dirty = false;
                             } else {
@@ -2336,10 +2422,15 @@ component AreaEditor inherits Rectangle {
                         has-data: root.has-data;
                         display-width: root.display-width;
                         display-height: root.display-height;
+                        tablet-width: root.tablet-width;
+                        tablet-height: root.tablet-height;
                         area-width: root.draft-width;
                         area-height: root.draft-height;
+                        area-x <=> root.draft-x;
+                        area-y <=> root.draft-y;
                         area-rotation: root.draft-rotation;
                         values-valid: root.values-valid;
+                        position-edited => { root.dirty = true; root.apply-state = "idle"; }
                     }
                     AreaControls {
                         draft-width <=> root.draft-width;
@@ -2347,19 +2438,23 @@ component AreaEditor inherits Rectangle {
                         draft-x <=> root.draft-x;
                         draft-y <=> root.draft-y;
                         draft-rotation <=> root.draft-rotation;
+                        monitor-index <=> root.draft-monitor-index;
+                        monitor-options: root.monitor-options;
                         dirty <=> root.dirty;
                         apply-state <=> root.apply-state;
                         edited => { root.dirty = true; root.apply-state = "idle"; }
+                        monitor-edited => { root.dirty = true; root.apply-state = "idle"; }
                         revert => { root.revert-draft(); }
                         refresh => { root.revert-draft(); root.retry-detection(); }
                         apply => {
                             root.apply-state = "waiting";
-                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation);
+                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-monitor-index);
                             if root.same-number(root.area-width, root.draft-width)
                                 && root.same-number(root.area-height, root.draft-height)
                                 && root.same-number(root.area-x, root.draft-x)
                                 && root.same-number(root.area-y, root.draft-y)
-                                && root.same-number(root.area-rotation, root.draft-rotation) {
+                                && root.same-number(root.area-rotation, root.draft-rotation)
+                                && root.monitor-index == root.draft-monitor-index {
                                 root.apply-state = "confirmed";
                                 root.dirty = false;
                             } else {
@@ -2380,6 +2475,10 @@ component AreaPage inherits Rectangle {
     in property <string> device-name;
     in property <float> display-width: 152;
     in property <float> display-height: 95;
+    in property <float> tablet-width: 152;
+    in property <float> tablet-height: 95;
+    in property <int> monitor-index: -1;
+    in property <[string]> monitor-options: [];
     in property <string> area-width;
     in property <string> area-height;
     in property <string> area-x;
@@ -2387,7 +2486,7 @@ component AreaPage inherits Rectangle {
     in property <string> area-rotation;
     callback retry-detection();
     callback start-driver();
-    callback apply-area(string, string, string, string, string, string);
+    callback apply-area(string, string, string, string, string, string, int);
 
     AreaEditor {
         visible: root.backend-state == "ready" && root.device-name != "";
@@ -2395,14 +2494,18 @@ component AreaPage inherits Rectangle {
         has-data: root.area-width != "" && root.area-height != "" && root.area-x != "" && root.area-y != "" && root.area-rotation != "";
         display-width: root.display-width;
         display-height: root.display-height;
+        tablet-width: root.tablet-width;
+        tablet-height: root.tablet-height;
+        monitor-index: root.monitor-index;
+        monitor-options: root.monitor-options;
         area-width: root.area-width;
         area-height: root.area-height;
         area-x: root.area-x;
         area-y: root.area-y;
         area-rotation: root.area-rotation;
         retry-detection => { root.retry-detection(); }
-        apply-area(width, height, x, y, rotation) => {
-            root.apply-area(root.device-name, width, height, x, y, rotation);
+        apply-area(width, height, x, y, rotation, monitor) => {
+            root.apply-area(root.device-name, width, height, x, y, rotation, monitor);
         }
     }
     if root.backend-state != "ready" || root.device-name == "": EmptyState {
@@ -2418,8 +2521,95 @@ component AreaPage inherits Rectangle {
     }
 }
 
+component PermissionCard inherits Rectangle {
+    in property <bool> input-monitoring-granted;
+    in property <bool> accessibility-granted;
+    callback request();
+    callback check();
+
+    property <bool> all-granted: root.input-monitoring-granted && root.accessibility-granted;
+    height: root.all-granted ? 108px : 152px;
+    border-radius: 24px;
+    background: AppTheme.surface-shell;
+    border-width: 1px;
+    border-color: root.all-granted ? AppTheme.line : AppTheme.warning;
+
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: parent.width - 8px;
+        height: parent.height - 8px;
+        border-radius: 20px;
+        background: root.all-granted ? AppTheme.surface-raised : AppTheme.accent-soft;
+        border-width: 1px;
+        border-color: AppTheme.line;
+        accessible-role: groupbox;
+        accessible-label: "macOS permissions";
+        accessible-description: root.all-granted ? "Input Monitoring and Accessibility are granted." : "Input Monitoring and Accessibility are required for tablet input.";
+
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 14px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 7px;
+            HorizontalLayout {
+                height: 30px;
+                spacing: 11px;
+                cross-axis-alignment: center;
+                Rectangle {
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 10px;
+                    background: root.all-granted ? AppTheme.success-soft : AppTheme.warning;
+                    Icon { name: "permissions"; tint: root.all-granted ? AppTheme.success : AppTheme.accent-on; x: 6px; y: 6px; }
+                }
+                VerticalLayout {
+                    spacing: 2px;
+                    horizontal-stretch: 1;
+                    Text { text: "macOS permissions"; color: AppTheme.text; font-size: 13px; font-weight: 650; }
+                    Text { text: root.all-granted ? "TabletFlow can receive and send tablet input." : "Allow both permissions so the tablet can work."; color: AppTheme.text-muted; font-size: 10px; }
+                }
+                StatusPill {
+                    label: root.all-granted ? "Ready" : "Action needed";
+                    positive: root.all-granted;
+                    danger: !root.all-granted;
+                }
+            }
+            if !root.all-granted: HorizontalLayout {
+                spacing: 10px;
+                height: 28px;
+                Text { text: "Input Monitoring"; color: AppTheme.text-secondary; font-size: 11px; horizontal-stretch: 1; vertical-alignment: center; }
+                StatusPill { label: root.input-monitoring-granted ? "Granted" : "Not granted"; positive: root.input-monitoring-granted; danger: !root.input-monitoring-granted; width: 112px; height: 26px; }
+                Text { text: "Accessibility"; color: AppTheme.text-secondary; font-size: 11px; horizontal-stretch: 1; vertical-alignment: center; }
+                StatusPill { label: root.accessibility-granted ? "Granted" : "Not granted"; positive: root.accessibility-granted; danger: !root.accessibility-granted; width: 112px; height: 26px; }
+            }
+            HorizontalLayout {
+                height: AppTheme.button-height;
+                spacing: 9px;
+                alignment: end;
+                if !root.all-granted: AppButton {
+                    label: "Open System Settings";
+                    primary: true;
+                    button-width: 156px;
+                    clicked => { root.request(); }
+                }
+                AppButton {
+                    label: "Check again";
+                    primary: false;
+                    button-width: 108px;
+                    clicked => { root.check(); }
+                }
+            }
+        }
+    }
+}
+
 component SettingsPage inherits Rectangle {
     in property <string> backend-state;
+    in property <string> permission-platform: "other";
+    in property <bool> input-monitoring-granted: true;
+    in property <bool> accessibility-granted: true;
     in-out property <string> theme: "System";
     in-out property <string> accent: "Blue";
     in-out property <bool> custom-colors: false;
@@ -2443,6 +2633,8 @@ component SettingsPage inherits Rectangle {
     property <bool> confirm-reset: false;
     callback open-github();
     callback settings-changed();
+    callback request-permissions();
+    callback check-permissions();
 
     function connection-label() -> string {
         return root.backend-state == "ready" ? "Connected"
@@ -2506,7 +2698,7 @@ component SettingsPage inherits Rectangle {
         width: parent.width;
         height: parent.height;
         viewport-width: parent.width;
-        viewport-height: 1180px;
+        viewport-height: 1750px;
 
         HorizontalLayout {
             width: parent.width;
@@ -2519,7 +2711,15 @@ component SettingsPage inherits Rectangle {
 
             PageHeader { icon: "settings"; title: "Settings"; subtitle: "Preferences for TabletFlow"; }
 
-            SectionHeader { icon: "theme"; title: "Appearance"; hint: ""; }
+            if root.permission-platform == "macOS": SectionHeader { icon: "permissions"; title: "Privacy & security"; hint: root.input-monitoring-granted && root.accessibility-granted ? "Ready" : "Action needed"; }
+            if root.permission-platform == "macOS": PermissionCard {
+                input-monitoring-granted: root.input-monitoring-granted;
+                accessibility-granted: root.accessibility-granted;
+                request => { root.request-permissions(); }
+                check => { root.check-permissions(); }
+            }
+
+            SectionHeader { icon: "theme"; title: "Appearance"; hint: root.custom-colors ? "Custom highlight active" : ""; }
             Rectangle {
                 height: AppTheme.compact ? 258px : 282px;
                 border-radius: 26px;
@@ -2567,9 +2767,9 @@ component SettingsPage inherits Rectangle {
                             accessible-label: "Accent color";
                             Icon { name: "accent"; tint: AppTheme.icon; width: 20px; height: 20px; }
                             Text { text: "Accent color"; color: AppTheme.text-secondary; font-size: 13px; font-weight: 500; horizontal-stretch: 1; vertical-alignment: center; }
-                            ColorOption { label: "Blue"; swatch: #8fb5e6; selected: root.accent == "Blue"; clicked => { root.accent = "Blue"; AppTheme.accent = "Blue"; root.settings-changed(); } }
-                            ColorOption { label: "Amber"; swatch: #d6aa72; selected: root.accent == "Amber"; clicked => { root.accent = "Amber"; AppTheme.accent = "Amber"; root.settings-changed(); } }
-                            ColorOption { label: "Mint"; swatch: #9ac7b0; selected: root.accent == "Mint"; clicked => { root.accent = "Mint"; AppTheme.accent = "Mint"; root.settings-changed(); } }
+                            ColorOption { label: "Blue"; swatch: #8fb5e6; selected: root.accent == "Blue" && !root.custom-colors; enabled: !root.custom-colors; clicked => { root.accent = "Blue"; AppTheme.accent = "Blue"; root.settings-changed(); } }
+                            ColorOption { label: "Amber"; swatch: #d6aa72; selected: root.accent == "Amber" && !root.custom-colors; enabled: !root.custom-colors; clicked => { root.accent = "Amber"; AppTheme.accent = "Amber"; root.settings-changed(); } }
+                            ColorOption { label: "Mint"; swatch: #9ac7b0; selected: root.accent == "Mint" && !root.custom-colors; enabled: !root.custom-colors; clicked => { root.accent = "Mint"; AppTheme.accent = "Mint"; root.settings-changed(); } }
                         }
                         Divider {}
                         SwitchRow { icon: "compact"; label: "Compact UI"; description: "Use tighter spacing in controls and navigation"; checked: root.compact-ui; toggled => { root.compact-ui = !root.compact-ui; AppTheme.compact = root.compact-ui; root.settings-changed(); } }
@@ -2627,12 +2827,38 @@ component SettingsPage inherits Rectangle {
                                     root.settings-changed();
                                 }
                             }
-                            SwitchVisual { checked: root.custom-colors; }
-                            TouchArea {
-                                clicked => {
-                                    root.custom-colors = !root.custom-colors;
-                                    AppTheme.custom-colors = root.custom-colors;
-                                    root.settings-changed();
+                            custom-toggle := Rectangle {
+                                width: 42px;
+                                height: 26px;
+                                border-radius: 13px;
+                                border-width: custom-toggle-focus.has-focus ? 2px : 0px;
+                                border-color: AppTheme.accent-color;
+                                forward-focus: custom-toggle-focus;
+                                accessible-role: switch;
+                                accessible-label: "Use custom colors";
+                                accessible-enabled: true;
+                                accessible-checkable: true;
+                                accessible-checked: root.custom-colors;
+                                accessible-action-default => { toggle-touch.clicked(); }
+                                SwitchVisual { checked: root.custom-colors; }
+                                toggle-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.custom-colors = !root.custom-colors;
+                                        AppTheme.custom-colors = root.custom-colors;
+                                        root.settings-changed();
+                                    }
+                                }
+                                custom-toggle-focus := FocusScope {
+                                    x: 0px;
+                                    width: 0px;
+                                    key-pressed(event) => {
+                                        if event.text == " " || event.text == "\n" {
+                                            toggle-touch.clicked();
+                                            return accept;
+                                        }
+                                        return reject;
+                                    }
                                 }
                             }
                         }
@@ -2921,11 +3147,15 @@ export component MainWindow inherits Window {
     in-out property <string> active-profile: "";
     in-out property <float> area-preview-width: 152;
     in-out property <float> area-preview-height: 95;
+    in-out property <float> tablet-bounds-width: 152;
+    in-out property <float> tablet-bounds-height: 95;
     in-out property <string> area-width: "";
     in-out property <string> area-height: "";
     in-out property <string> area-x: "";
     in-out property <string> area-y: "";
     in-out property <string> area-rotation: "";
+    in-out property <[string]> monitor-options: ["Primary display · 1920 × 1080"];
+    in-out property <int> monitor-index: -1;
     in-out property <bool> pen-data-available: false;
     in-out property <string> theme: "System";
     in-out property <string> accent: "Blue";
@@ -2947,13 +3177,19 @@ export component MainWindow inherits Window {
     in-out property <string> polling-interval: "Auto";
     in-out property <bool> low-power-mode: false;
     in-out property <bool> show-diagnostics: false;
+    in-out property <string> permission-platform: "other";
+    in-out property <bool> input-monitoring-granted: true;
+    in-out property <bool> accessibility-granted: true;
+    out property <bool> permissions-granted: root.input-monitoring-granted && root.accessibility-granted;
 
     callback navigate(string);
     callback start-daemon();
     callback retry-backend();
-    callback apply-area(string, string, string, string, string, string);
+    callback apply-area(string, string, string, string, string, string, int);
     callback open-github();
     callback settings-changed();
+    callback request-permissions();
+    callback check-permissions();
 
     function sync-custom-theme() {
         AppTheme.custom-colors = root.custom-colors;
@@ -3069,6 +3305,10 @@ export component MainWindow inherits Window {
                     device-name: root.device-name;
                     display-width: root.area-preview-width;
                     display-height: root.area-preview-height;
+                    tablet-width: root.tablet-bounds-width;
+                    tablet-height: root.tablet-bounds-height;
+                    monitor-index: root.monitor-index;
+                    monitor-options: root.monitor-options;
                     area-width: root.area-width;
                     area-height: root.area-height;
                     area-x: root.area-x;
@@ -3076,12 +3316,15 @@ export component MainWindow inherits Window {
                     area-rotation: root.area-rotation;
                     retry-detection => { root.retry-backend(); }
                     start-driver => { root.start-daemon(); }
-                    apply-area(tablet, width, height, x, y, rotation) => {
-                        root.apply-area(tablet, width, height, x, y, rotation);
+                    apply-area(tablet, width, height, x, y, rotation, monitor) => {
+                        root.apply-area(tablet, width, height, x, y, rotation, monitor);
                     }
                 }
                 if root.active-page == "Settings": SettingsPage {
                     backend-state: root.backend-state;
+                    permission-platform: root.permission-platform;
+                    input-monitoring-granted: root.input-monitoring-granted;
+                    accessibility-granted: root.accessibility-granted;
                     theme <=> root.theme;
                     accent <=> root.accent;
                     custom-colors <=> root.custom-colors;
@@ -3104,6 +3347,8 @@ export component MainWindow inherits Window {
                     show-diagnostics <=> root.show-diagnostics;
                     open-github => { root.open-github(); }
                     settings-changed => { root.settings-changed(); }
+                    request-permissions => { root.request-permissions(); }
+                    check-permissions => { root.check-permissions(); }
                 }
             }
         }

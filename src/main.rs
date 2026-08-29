@@ -238,7 +238,11 @@ struct MacRect {
 #[cfg(target_os = "macos")]
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
-    fn CGGetActiveDisplayList(max_displays: u32, active_displays: *mut u32, display_count: *mut u32) -> i32;
+    fn CGGetActiveDisplayList(
+        max_displays: u32,
+        active_displays: *mut u32,
+        display_count: *mut u32,
+    ) -> i32;
     fn CGDisplayBounds(display: u32) -> MacRect;
 }
 
@@ -297,7 +301,8 @@ fn enumerate_linux_displays() -> Vec<DisplayInfo> {
             continue;
         }
         let Some(geometry) = line.split_whitespace().find(|part| {
-            let Some(size_end) = part.find(|character: char| character == '+' || character == '-') else {
+            let Some(size_end) = part.find(|character: char| character == '+' || character == '-')
+            else {
                 return false;
             };
             part[..size_end].contains('x')
@@ -307,7 +312,8 @@ fn enumerate_linux_displays() -> Vec<DisplayInfo> {
         }) else {
             continue;
         };
-        let Some(size_end) = geometry.find(|character: char| character == '+' || character == '-') else {
+        let Some(size_end) = geometry.find(|character: char| character == '+' || character == '-')
+        else {
             continue;
         };
         let Some(separator) = geometry[size_end + 1..]
@@ -316,9 +322,13 @@ fn enumerate_linux_displays() -> Vec<DisplayInfo> {
         else {
             continue;
         };
-        let Some((width, height)) = geometry[..size_end].split_once('x').and_then(|(width, height)| {
-            Some((width.parse::<f32>().ok()?, height.parse::<f32>().ok()?))
-        }) else {
+        let Some((width, height)) =
+            geometry[..size_end]
+                .split_once('x')
+                .and_then(|(width, height)| {
+                    Some((width.parse::<f32>().ok()?, height.parse::<f32>().ok()?))
+                })
+        else {
             continue;
         };
         let Ok(x) = geometry[size_end..separator].parse::<f32>() else {
@@ -333,8 +343,14 @@ fn enumerate_linux_displays() -> Vec<DisplayInfo> {
     if displays.is_empty() {
         return vec![DisplayInfo::fallback()];
     }
-    let min_x = displays.iter().map(|display| display.2).fold(f32::INFINITY, f32::min);
-    let min_y = displays.iter().map(|display| display.3).fold(f32::INFINITY, f32::min);
+    let min_x = displays
+        .iter()
+        .map(|display| display.2)
+        .fold(f32::INFINITY, f32::min);
+    let min_y = displays
+        .iter()
+        .map(|display| display.3)
+        .fold(f32::INFINITY, f32::min);
     displays
         .into_iter()
         .enumerate()
@@ -364,7 +380,13 @@ fn enumerate_displays() -> Vec<DisplayInfo> {
     enumerate_linux_displays()
 }
 
-fn selected_display_index(displays: &[DisplayInfo], width: f32, height: f32, x: f32, y: f32) -> i32 {
+fn selected_display_index(
+    displays: &[DisplayInfo],
+    width: f32,
+    height: f32,
+    x: f32,
+    y: f32,
+) -> i32 {
     displays
         .iter()
         .find(|display| {
@@ -592,13 +614,16 @@ fn publish_backend_snapshot(ui: &MainWindow, snapshot: BackendSnapshot) {
     ui.set_area_x(snapshot.area_x.into());
     ui.set_area_y(snapshot.area_y.into());
     ui.set_area_rotation(snapshot.area_rotation.into());
-    if snapshot.monitor_index >= 0 {
-        ui.set_monitor_index(snapshot.monitor_index);
-    }
+    // Keep an unmatched virtual-screen mapping as "no specific display".
+    // That preserves the driver's current mapping until the user chooses one.
+    ui.set_monitor_index(snapshot.monitor_index);
     ui.set_pen_data_available(snapshot.pen_data_available);
 }
 
-fn start_backend_worker(ui: slint::Weak<MainWindow>, displays: Vec<DisplayInfo>) -> Sender<BackendCommand> {
+fn start_backend_worker(
+    ui: slint::Weak<MainWindow>,
+    displays: Vec<DisplayInfo>,
+) -> Sender<BackendCommand> {
     let (command_sender, command_receiver) = mpsc::channel();
     thread::spawn(move || {
         backend_worker(ui, command_receiver, displays);
@@ -796,16 +821,16 @@ fn parse_float(value: &str, fallback: f32, minimum: f32, maximum: f32) -> f32 {
 fn settings_path() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        return std::env::var_os("HOME")
+        std::env::var_os("HOME")
             .map(PathBuf::from)
-            .map(|home| home.join("Library/Application Support/TabletFlow/settings.conf"));
+            .map(|home| home.join("Library/Application Support/TabletFlow/settings.conf"))
     }
 
     #[cfg(target_os = "windows")]
     {
-        return std::env::var_os("APPDATA")
+        std::env::var_os("APPDATA")
             .map(PathBuf::from)
-            .map(|app_data| app_data.join("TabletFlow/settings.conf"));
+            .map(|app_data| app_data.join("TabletFlow/settings.conf"))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -1278,6 +1303,54 @@ fn stop_daemon() {
     let _ = child.wait();
 }
 
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "IOKit", kind = "framework")]
+extern "C" {
+    fn IOHIDCheckAccess(request_type: u32) -> u32;
+    fn IOHIDRequestAccess(request_type: u32) -> bool;
+}
+
+fn macos_permissions() -> (bool, bool) {
+    #[cfg(target_os = "macos")]
+    {
+        const IOHID_REQUEST_TYPE_LISTEN_EVENT: u32 = 1;
+        let input_monitoring = unsafe { IOHIDCheckAccess(IOHID_REQUEST_TYPE_LISTEN_EVENT) } == 0;
+        let accessibility = unsafe { AXIsProcessTrusted() };
+        (input_monitoring, accessibility)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        (true, true)
+    }
+}
+
+fn request_macos_permissions() {
+    #[cfg(target_os = "macos")]
+    {
+        const IOHID_REQUEST_TYPE_LISTEN_EVENT: u32 = 1;
+        let (input_monitoring_granted, accessibility_granted) = macos_permissions();
+        if !input_monitoring_granted {
+            let _ = unsafe { IOHIDRequestAccess(IOHID_REQUEST_TYPE_LISTEN_EVENT) };
+            let _ = Command::new("open")
+                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+                .spawn();
+        } else if !accessibility_granted {
+            let _ = Command::new("open")
+                .arg(
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                )
+                .spawn();
+        }
+    }
+}
+
 fn open_github() {
     const URL: &str = "https://github.com/UnderWeek/TabletFlow";
 
@@ -1300,6 +1373,20 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = MainWindow::new()?;
     apply_settings(&ui, &settings);
+    let (input_monitoring_granted, accessibility_granted) = macos_permissions();
+    ui.set_permission_platform(
+        if cfg!(target_os = "macos") {
+            "macOS"
+        } else {
+            "other"
+        }
+        .into(),
+    );
+    ui.set_input_monitoring_granted(input_monitoring_granted);
+    ui.set_accessibility_granted(accessibility_granted);
+    if cfg!(target_os = "macos") && !(input_monitoring_granted && accessibility_granted) {
+        request_macos_permissions();
+    }
     let _ = configure_autostart(settings.start_with_system, settings.start_minimized);
 
     let daemon_started = if daemon_is_running() {
@@ -1313,7 +1400,14 @@ fn main() -> Result<(), slint::PlatformError> {
         backend_state().into()
     });
 
-    let backend_commands = start_backend_worker(ui.as_weak());
+    let displays = enumerate_displays();
+    let monitor_options = ModelRc::new(VecModel::from_iter(
+        displays
+            .iter()
+            .map(|display| SharedString::from(display.label.clone())),
+    ));
+    ui.set_monitor_options(monitor_options);
+    let backend_commands = start_backend_worker(ui.as_weak(), displays.clone());
 
     let tray = TrayIcon::new()?;
     set_tray_visible(&tray, settings.close_to_tray);
@@ -1371,7 +1465,11 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     let apply_commands = backend_commands.clone();
-    ui.on_apply_area(move |tablet, width, height, x, y, rotation| {
+    ui.on_apply_area(move |tablet, width, height, x, y, rotation, monitor| {
+        let display = displays
+            .iter()
+            .find(|display| display.index == monitor)
+            .cloned();
         let _ = apply_commands.send(BackendCommand::ApplyArea {
             tablet_name: tablet.to_string(),
             width: width.to_string(),
@@ -1379,6 +1477,7 @@ fn main() -> Result<(), slint::PlatformError> {
             x: x.to_string(),
             y: y.to_string(),
             rotation: rotation.to_string(),
+            display,
         });
     });
 
@@ -1396,6 +1495,25 @@ fn main() -> Result<(), slint::PlatformError> {
 
     ui.on_open_github(move || {
         open_github();
+    });
+
+    let weak_ui = ui.as_weak();
+    ui.on_check_permissions(move || {
+        let (input_monitoring_granted, accessibility_granted) = macos_permissions();
+        if let Some(ui) = weak_ui.upgrade() {
+            ui.set_input_monitoring_granted(input_monitoring_granted);
+            ui.set_accessibility_granted(accessibility_granted);
+        }
+    });
+
+    let weak_ui = ui.as_weak();
+    ui.on_request_permissions(move || {
+        request_macos_permissions();
+        let (input_monitoring_granted, accessibility_granted) = macos_permissions();
+        if let Some(ui) = weak_ui.upgrade() {
+            ui.set_input_monitoring_granted(input_monitoring_granted);
+            ui.set_accessibility_granted(accessibility_granted);
+        }
     });
 
     ui.show()?;
