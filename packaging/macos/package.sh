@@ -44,6 +44,9 @@ chmod +x "$APP_DIR/Contents/MacOS/TabletFlow" "$APP_DIR/Contents/MacOS/OpenTable
 ln -s /Applications "$STAGING_DIR/Applications"
 cp -R "$APP_DIR" "$STAGING_DIR/TabletFlow.app"
 
+SOURCE_SIZE_KB="$(du -sk "$STAGING_DIR" | awk '{print $1}')"
+IMAGE_SIZE_KB=$((SOURCE_SIZE_KB + 512 * 1024))
+
 for attempt in 1 2 3; do
     rm -f "$DMG_PATH"
     echo "Creating macOS disk image (attempt $attempt/3)..." >&2
@@ -51,6 +54,7 @@ for attempt in 1 2 3; do
         -ov \
         -nospotlight \
         -noanyowners \
+        -size "${IMAGE_SIZE_KB}k" \
         -fs APFS \
         -volname TabletFlow \
         -srcfolder "$STAGING_DIR" \
