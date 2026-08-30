@@ -1650,7 +1650,6 @@ fn daemon_process() -> &'static Mutex<Option<Child>> {
 fn daemon_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
-    #[cfg(debug_assertions)]
     {
         let runtime_id = match (std::env::consts::OS, std::env::consts::ARCH) {
             ("macos", "aarch64") => Some("osx-arm64"),

@@ -41,6 +41,11 @@ if [[ -n "${OTD_LICENSE_PATH:-}" && -f "$OTD_LICENSE_PATH" ]]; then
 fi
 chmod +x "$APP_DIR/Contents/MacOS/TabletFlow" "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
 
+# The daemon is published with code signing disabled (see build-daemon.sh).
+# Apple Silicon refuses to run unsigned code at all (SIGKILL on launch), so
+# apply an ad-hoc signature here to make the daemon runnable on arm64.
+codesign --force --sign - "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
+
 ln -s /Applications "$STAGING_DIR/Applications"
 cp -R "$APP_DIR" "$STAGING_DIR/TabletFlow.app"
 
