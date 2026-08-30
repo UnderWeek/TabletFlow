@@ -620,17 +620,19 @@ component Sidebar inherits Rectangle {
     function connection-title() -> string {
         return root.backend-state == "ready" ? "Driver connected"
             : (root.backend-state == "daemon-not-running" ? "Driver offline"
+            : (root.backend-state == "daemon-crashed" ? "Driver error"
             : (root.backend-state == "daemon-starting" ? "Starting driver"
             : (root.backend-state == "daemon-running" ? "Driver connected"
-            : (root.backend-state == "no-tablet" ? "Driver connected" : "Checking driver"))));
+            : (root.backend-state == "no-tablet" ? "Driver connected" : "Checking driver")))));
     }
 
     function connection-detail() -> string {
         return root.backend-state == "ready" ? "Tablet is ready"
             : (root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver"
+            : (root.backend-state == "daemon-crashed" ? "Restart OpenTabletDriver"
             : (root.backend-state == "daemon-starting" ? "Please wait"
             : (root.backend-state == "daemon-running" ? "Waiting for a tablet"
-            : (root.backend-state == "no-tablet" ? "No tablet connected" : "Connecting to OpenTabletDriver"))));
+            : (root.backend-state == "no-tablet" ? "No tablet connected" : "Connecting to OpenTabletDriver")))));
     }
 
     width: root.compact ? 72px : 220px;
@@ -763,7 +765,7 @@ component Sidebar inherits Rectangle {
                     width: 9px;
                     height: 9px;
                     border-radius: 5px;
-                    background: root.backend-state == "ready" || root.backend-state == "daemon-running" || root.backend-state == "no-tablet" ? AppTheme.success : (root.backend-state == "daemon-not-running" ? AppTheme.danger : AppTheme.warning);
+                    background: root.backend-state == "ready" || root.backend-state == "daemon-running" || root.backend-state == "no-tablet" ? AppTheme.success : (root.backend-state == "daemon-not-running" || root.backend-state == "daemon-crashed" ? AppTheme.danger : AppTheme.warning);
                 }
                 if !root.compact: VerticalLayout {
                     spacing: 2px;
@@ -2429,7 +2431,6 @@ component AreaEditor inherits Rectangle {
         && root.draft-height.is-float() && root.draft-height.to-float() > 0
         && root.draft-x.is-float() && root.draft-y.is-float()
         && root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360;
-    callback retry-detection();
     callback apply-area(string, string, string, string, string, int);
 
     pure function same-number(a: string, b: string) -> bool {
@@ -2542,7 +2543,7 @@ component AreaEditor inherits Rectangle {
                         edited => { root.dirty = true; root.apply-state = "idle"; }
                         monitor-edited => { root.dirty = true; root.apply-state = "idle"; }
                         revert => { root.revert-draft(); }
-                        refresh => { root.revert-draft(); root.retry-detection(); }
+                        refresh => { root.revert-draft(); }
                         apply => {
                             root.apply-state = "waiting";
                             root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-monitor-index);
@@ -2590,7 +2591,7 @@ component AreaEditor inherits Rectangle {
                         edited => { root.dirty = true; root.apply-state = "idle"; }
                         monitor-edited => { root.dirty = true; root.apply-state = "idle"; }
                         revert => { root.revert-draft(); }
-                        refresh => { root.revert-draft(); root.retry-detection(); }
+                        refresh => { root.revert-draft(); }
                         apply => {
                             root.apply-state = "waiting";
                             root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-monitor-index);
@@ -2648,7 +2649,6 @@ component AreaPage inherits Rectangle {
         area-x: root.area-x;
         area-y: root.area-y;
         area-rotation: root.area-rotation;
-        retry-detection => { root.retry-detection(); }
         apply-area(width, height, x, y, rotation, monitor) => {
             root.apply-area(root.device-name, width, height, x, y, rotation, monitor);
         }
@@ -2657,9 +2657,9 @@ component AreaPage inherits Rectangle {
         icon: "area";
         centered: false;
         heading: "Active area";
-        message: root.backend-state == "daemon-not-running" ? "The tablet driver is offline" : (root.backend-state == "daemon-starting" ? "Starting the tablet driver" : (root.backend-state == "daemon-running" ? "Waiting for a tablet" : (root.backend-state == "unknown" ? "Checking OpenTabletDriver" : "No tablet connected")));
-        detail: root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver to detect and configure your tablet." : (root.backend-state == "daemon-starting" ? "This usually takes a few seconds." : "Connect a supported tablet, then check again.");
-        primary-label: root.backend-state == "daemon-not-running" ? "Start driver" : "";
+        message: root.backend-state == "daemon-crashed" ? "The tablet driver has stopped" : (root.backend-state == "daemon-not-running" ? "The tablet driver is offline" : (root.backend-state == "daemon-starting" ? "Starting the tablet driver" : (root.backend-state == "daemon-running" ? "Waiting for a tablet" : (root.backend-state == "unknown" ? "Checking OpenTabletDriver" : "No tablet connected"))));
+        detail: root.backend-state == "daemon-crashed" ? "Restart OpenTabletDriver to restore tablet input." : (root.backend-state == "daemon-not-running" ? "Start OpenTabletDriver to detect and configure your tablet." : (root.backend-state == "daemon-starting" ? "This usually takes a few seconds." : "Connect a supported tablet, then check again."));
+        primary-label: root.backend-state == "daemon-not-running" || root.backend-state == "daemon-crashed" ? "Start driver" : "";
         secondary-label: root.backend-state == "daemon-starting" ? "" : "Check again";
         primary-clicked => { root.start-driver(); }
         secondary-clicked => { root.retry-detection(); }
@@ -2784,17 +2784,19 @@ component SettingsPage inherits Rectangle {
     function connection-label() -> string {
         return root.backend-state == "ready" ? "Connected"
             : (root.backend-state == "daemon-not-running" ? "Offline"
+            : (root.backend-state == "daemon-crashed" ? "Error"
             : (root.backend-state == "daemon-starting" ? "Starting"
             : (root.backend-state == "daemon-running" ? "Waiting"
-            : (root.backend-state == "no-tablet" ? "No tablet" : "Checking"))));
+            : (root.backend-state == "no-tablet" ? "No tablet" : "Checking")))));
     }
 
     function connection-detail() -> string {
         return root.backend-state == "unknown" ? "Checking connection"
             : (root.backend-state == "daemon-not-running" ? "Driver is offline"
+            : (root.backend-state == "daemon-crashed" ? "Driver stopped unexpectedly"
             : (root.backend-state == "daemon-starting" ? "Starting driver"
             : (root.backend-state == "daemon-running" ? "Waiting for a tablet"
-            : (root.backend-state == "no-tablet" ? "Driver connected · no tablet" : "Driver and tablet connected"))));
+            : (root.backend-state == "no-tablet" ? "Driver connected · no tablet" : "Driver and tablet connected")))));
     }
 
     function connection-positive() -> bool {
@@ -3128,7 +3130,7 @@ component SettingsPage inherits Rectangle {
                                 width: 8px;
                                 height: 8px;
                                 border-radius: 4px;
-                                background: root.backend-state == "ready" ? AppTheme.success : (root.backend-state == "daemon-not-running" ? AppTheme.danger : AppTheme.warning);
+                                background: root.backend-state == "ready" ? AppTheme.success : (root.backend-state == "daemon-not-running" || root.backend-state == "daemon-crashed" ? AppTheme.danger : AppTheme.warning);
                             }
                         }
                         VerticalLayout {
@@ -3151,7 +3153,7 @@ component SettingsPage inherits Rectangle {
                         StatusPill {
                             label: root.connection-label();
                             positive: root.connection-positive();
-                            danger: root.backend-state == "daemon-not-running";
+                            danger: root.backend-state == "daemon-not-running" || root.backend-state == "daemon-crashed";
                         }
                     }
                 }
@@ -3275,7 +3277,7 @@ export component TrayIcon inherits SystemTrayIcon {
     }
 }
 
-// Backend state contract: "unknown", "daemon-not-running", "daemon-starting", "daemon-running", "no-tablet", "ready".
+// Backend state contract: "unknown", "daemon-not-running", "daemon-crashed", "daemon-starting", "daemon-running", "no-tablet", "ready".
 // The default stays unknown until real IPC data is provided by the backend.
 export component MainWindow inherits Window {
     title: "TabletFlow";
@@ -3404,6 +3406,16 @@ export component MainWindow inherits Window {
                     message: "The tablet driver is offline";
                     detail: "Start OpenTabletDriver to detect your tablet.";
                     primary-label: "Start driver";
+                    secondary-label: "Check again";
+                    primary-clicked => { root.start-daemon(); }
+                    secondary-clicked => { root.retry-backend(); }
+                }
+                if root.active-page == "Overview" && root.backend-state == "daemon-crashed": EmptyState {
+                    icon: "daemon";
+                    heading: "TabletFlow";
+                    message: "OpenTabletDriver stopped unexpectedly";
+                    detail: "Restart the driver to restore tablet input.";
+                    primary-label: "Restart driver";
                     secondary-label: "Check again";
                     primary-clicked => { root.start-daemon(); }
                     secondary-clicked => { root.retry-backend(); }

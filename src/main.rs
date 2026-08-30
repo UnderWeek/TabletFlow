@@ -8,8 +8,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -18,15 +17,25 @@ use std::time::Duration;
 use std::os::unix::net::UnixStream;
 
 static EMBEDDED_DAEMON: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
-static BACKEND_RETRY: AtomicBool = AtomicBool::new(false);
-
 const DAEMON_PIPE_NAME: &str = "OpenTabletDriver.Daemon";
+const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
 
 enum DaemonStream {
     #[cfg(unix)]
     Unix(UnixStream),
     #[cfg(windows)]
     Windows(std::fs::File),
+}
+
+impl DaemonStream {
+    fn try_clone(&self) -> io::Result<Self> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(stream) => stream.try_clone().map(Self::Unix),
+            #[cfg(windows)]
+            Self::Windows(stream) => stream.try_clone().map(Self::Windows),
+        }
+    }
 }
 
 impl Read for DaemonStream {
@@ -62,17 +71,20 @@ impl Write for DaemonStream {
 
 struct DaemonClient {
     stream: DaemonStream,
+    responses: Receiver<Value>,
     next_id: u64,
 }
 
 impl DaemonClient {
-    fn connect() -> io::Result<Self> {
+    fn connect(
+        backend_events: Sender<BackendCommand>,
+        connection_generation: u64,
+    ) -> io::Result<Self> {
         #[cfg(unix)]
         let stream = {
             let stream = UnixStream::connect(
                 std::env::temp_dir().join(format!("CoreFxPipe_{DAEMON_PIPE_NAME}")),
             )?;
-            stream.set_read_timeout(Some(Duration::from_secs(45)))?;
             stream.set_write_timeout(Some(Duration::from_secs(15)))?;
             DaemonStream::Unix(stream)
         };
@@ -85,7 +97,41 @@ impl DaemonClient {
                 .open(format!(r"\\.\pipe\{DAEMON_PIPE_NAME}"))?,
         );
 
-        Ok(Self { stream, next_id: 1 })
+        let mut reader = stream.try_clone()?;
+        let (response_sender, responses) = mpsc::channel();
+        thread::spawn(move || loop {
+            match read_rpc_message(&mut reader) {
+                Ok(message) if message.get("id").is_some() => {
+                    if response_sender.send(message).is_err() {
+                        break;
+                    }
+                }
+                Ok(message) => {
+                    let method = message
+                        .get("method")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    if method.contains("TabletsChanged") {
+                        let _ = backend_events.send(BackendCommand::TabletChanged {
+                            generation: connection_generation,
+                        });
+                    }
+                }
+                Err(error) => {
+                    let _ = backend_events.send(BackendCommand::DriverDisconnected {
+                        generation: connection_generation,
+                        reason: error.to_string(),
+                    });
+                    break;
+                }
+            }
+        });
+
+        Ok(Self {
+            stream,
+            responses,
+            next_id: 1,
+        })
     }
 
     fn call(&mut self, method: &str, params: Value) -> io::Result<Value> {
@@ -104,7 +150,18 @@ impl DaemonClient {
         self.stream.flush()?;
 
         loop {
-            let response = read_rpc_message(&mut self.stream)?;
+            let response = self
+                .responses
+                .recv_timeout(Duration::from_secs(15))
+                .map_err(|error| match error {
+                    RecvTimeoutError::Timeout => {
+                        io::Error::new(io::ErrorKind::TimedOut, "OpenTabletDriver did not respond")
+                    }
+                    RecvTimeoutError::Disconnected => io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "OpenTabletDriver connection closed",
+                    ),
+                })?;
             if response.get("id") == Some(&json!(id)) {
                 if let Some(error) = response.get("error") {
                     return Err(io::Error::other(error.to_string()));
@@ -200,8 +257,16 @@ impl DisplayInfo {
     }
 }
 
+#[derive(Clone)]
 enum BackendCommand {
     Detect,
+    TabletChanged {
+        generation: u64,
+    },
+    DriverDisconnected {
+        generation: u64,
+        reason: String,
+    },
     ApplyArea {
         tablet_name: String,
         width: String,
@@ -595,6 +660,8 @@ fn query_backend(
     client: &mut DaemonClient,
     detect: bool,
     displays: &[DisplayInfo],
+    automatic_mapping_attempted: &mut bool,
+    driver_settings: &mut Option<Value>,
 ) -> io::Result<BackendSnapshot> {
     let tablets = if detect {
         client.call("DetectTablets", json!([]))?
@@ -631,8 +698,11 @@ fn query_backend(
             }
         }
     }
-    if let Ok(settings) = client.call("GetSettings", json!([])) {
-        if let Some(profile) = settings_for_tablet(&settings, &device_name) {
+    if driver_settings.is_none() {
+        *driver_settings = Some(client.call("GetSettings", json!([]))?);
+    }
+    if let Some(settings) = driver_settings.as_ref() {
+        if let Some(profile) = settings_for_tablet(settings, &device_name) {
             if let Some(absolute) = json_member(&profile, "AbsoluteModeSettings") {
                 if let Some(display_area) = json_member(absolute, "Display") {
                     let width = json_member(display_area, "Width").and_then(Value::as_f64);
@@ -668,43 +738,54 @@ fn query_backend(
         }
     }
 
-    // If the driver's mapping doesn't match a connected display, use the
-    // system primary display. A matching explicit mapping remains untouched.
-    if let Some(display) = displays
-        .iter()
-        .find(|display| display.detected && display.primary)
-        .or_else(|| displays.iter().find(|display| display.detected))
-        .filter(|_| snapshot.monitor_index < 0)
-        .cloned()
-    {
-        if snapshot.pen_data_available
-            && !snapshot.area_width.is_empty()
-            && !snapshot.area_height.is_empty()
-            && !snapshot.area_x.is_empty()
-            && !snapshot.area_y.is_empty()
-            && !snapshot.area_rotation.is_empty()
+    // Automatic display mapping may write settings only once after a tablet
+    // configuration becomes available. Event retries must not recreate the
+    // driver's output pipeline while the pen is already active.
+    if snapshot.pen_data_available && !*automatic_mapping_attempted {
+        *automatic_mapping_attempted = true;
+        if let Some(display) = displays
+            .iter()
+            .find(|display| display.detected && display.primary)
+            .or_else(|| displays.iter().find(|display| display.detected))
+            .filter(|_| snapshot.monitor_index < 0)
+            .cloned()
         {
-            apply_area(
-                client,
-                BackendCommand::ApplyArea {
-                    tablet_name: device_name,
-                    width: snapshot.area_width.clone(),
-                    height: snapshot.area_height.clone(),
-                    x: snapshot.area_x.clone(),
-                    y: snapshot.area_y.clone(),
-                    rotation: snapshot.area_rotation.clone(),
-                    display: Some(display.clone()),
-                },
-            )?;
-            snapshot.monitor_index = display.index;
-            snapshot.preview_width = display.width / 10.0;
-            snapshot.preview_height = display.height / 10.0;
+            if !snapshot.area_width.is_empty()
+                && !snapshot.area_height.is_empty()
+                && !snapshot.area_x.is_empty()
+                && !snapshot.area_y.is_empty()
+                && !snapshot.area_rotation.is_empty()
+            {
+                let settings = driver_settings.as_mut().ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "Driver settings missing")
+                })?;
+                apply_area(
+                    client,
+                    settings,
+                    BackendCommand::ApplyArea {
+                        tablet_name: device_name,
+                        width: snapshot.area_width.clone(),
+                        height: snapshot.area_height.clone(),
+                        x: snapshot.area_x.clone(),
+                        y: snapshot.area_y.clone(),
+                        rotation: snapshot.area_rotation.clone(),
+                        display: Some(display.clone()),
+                    },
+                )?;
+                snapshot.monitor_index = display.index;
+                snapshot.preview_width = display.width / 10.0;
+                snapshot.preview_height = display.height / 10.0;
+            }
         }
     }
     Ok(snapshot)
 }
 
-fn apply_area(client: &mut DaemonClient, command: BackendCommand) -> io::Result<()> {
+fn apply_area(
+    client: &mut DaemonClient,
+    settings: &mut Value,
+    command: BackendCommand,
+) -> io::Result<()> {
     let BackendCommand::ApplyArea {
         tablet_name,
         width,
@@ -718,8 +799,7 @@ fn apply_area(client: &mut DaemonClient, command: BackendCommand) -> io::Result<
         return Ok(());
     };
 
-    let mut settings = client.call("GetSettings", json!([]))?;
-    let profiles = json_member_mut(&mut settings, "Profiles")
+    let profiles = json_member_mut(settings, "Profiles")
         .and_then(Value::as_array_mut)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Profiles missing"))?;
     let profile = profiles
@@ -800,13 +880,40 @@ fn publish_backend_snapshot(ui: &MainWindow, snapshot: BackendSnapshot) {
     ui.set_pen_data_available(snapshot.pen_data_available);
 }
 
+fn publish_applied_area(ui: &MainWindow, command: BackendCommand) {
+    let BackendCommand::ApplyArea {
+        width,
+        height,
+        x,
+        y,
+        rotation,
+        display,
+        ..
+    } = command
+    else {
+        return;
+    };
+
+    ui.set_area_width(width.into());
+    ui.set_area_height(height.into());
+    ui.set_area_x(x.into());
+    ui.set_area_y(y.into());
+    ui.set_area_rotation(rotation.into());
+    if let Some(display) = display {
+        ui.set_monitor_index(display.index);
+        ui.set_area_preview_width(display.width / 10.0);
+        ui.set_area_preview_height(display.height / 10.0);
+    }
+}
+
 fn start_backend_worker(
     ui: slint::Weak<MainWindow>,
     displays: Vec<DisplayInfo>,
 ) -> Sender<BackendCommand> {
     let (command_sender, command_receiver) = mpsc::channel();
+    let backend_events = command_sender.clone();
     thread::spawn(move || {
-        backend_worker(ui, command_receiver, displays);
+        backend_worker(ui, command_receiver, backend_events, displays);
     });
     command_sender
 }
@@ -814,39 +921,92 @@ fn start_backend_worker(
 fn backend_worker(
     ui: slint::Weak<MainWindow>,
     command_receiver: Receiver<BackendCommand>,
+    backend_events: Sender<BackendCommand>,
     displays: Vec<DisplayInfo>,
 ) {
     let mut client = None;
     let mut detect_requested = false;
+    let mut refresh_requested = true;
+    let mut automatic_mapping_attempted = false;
+    let mut driver_settings = None;
+    let mut pending_command = None;
+    let mut connect_requested = true;
+    let mut active_generation = 0;
+    let mut next_generation = 1;
     let mut last_ipc_error = String::new();
     #[cfg(debug_assertions)]
     let mut last_backend_status = String::new();
 
     loop {
-        if !daemon_is_running() {
-            client = None;
-            detect_requested = false;
-            last_ipc_error.clear();
-            let weak_ui = ui.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(ui) = weak_ui.upgrade() {
-                    ui.set_backend_state("daemon-not-running".into());
-                    ui.set_device_name("".into());
-                    ui.set_pen_data_available(false);
-                }
-            });
-            while command_receiver.try_recv().is_ok() {}
-            thread::sleep(Duration::from_millis(1200));
-            continue;
-        }
-
-        while let Ok(command) = command_receiver.try_recv() {
+        for command in pending_command
+            .take()
+            .into_iter()
+            .chain(command_receiver.try_iter())
+        {
             match command {
-                BackendCommand::Detect => detect_requested = true,
+                BackendCommand::Detect => {
+                    detect_requested = true;
+                    refresh_requested = true;
+                    automatic_mapping_attempted = false;
+                    driver_settings = None;
+                    connect_requested = true;
+                }
+                BackendCommand::TabletChanged { generation } if generation == active_generation => {
+                    refresh_requested = true;
+                    automatic_mapping_attempted = false;
+                    driver_settings = None;
+                }
+                BackendCommand::DriverDisconnected { generation, reason }
+                    if generation == active_generation =>
+                {
+                    eprintln!("OpenTabletDriver connection closed: {reason}");
+                    client = None;
+                    connect_requested = false;
+                    refresh_requested = true;
+                    automatic_mapping_attempted = false;
+                    driver_settings = None;
+                    let weak_ui = ui.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = weak_ui.upgrade() {
+                            ui.set_backend_state("daemon-crashed".into());
+                            ui.set_device_name("".into());
+                            ui.set_pen_data_available(false);
+                        }
+                    });
+                }
+                BackendCommand::TabletChanged { .. }
+                | BackendCommand::DriverDisconnected { .. } => {}
                 command @ BackendCommand::ApplyArea { .. } => {
                     if let Some(connection) = client.as_mut() {
-                        if apply_area(connection, command).is_err() {
+                        let applied = command.clone();
+                        let result = driver_settings
+                            .as_mut()
+                            .ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::NotConnected,
+                                    "Driver settings are not loaded",
+                                )
+                            })
+                            .and_then(|settings| apply_area(connection, settings, command));
+                        if let Err(error) = result {
+                            eprintln!("OpenTabletDriver settings update failed: {error}");
                             client = None;
+                            connect_requested = false;
+                            let weak_ui = ui.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = weak_ui.upgrade() {
+                                    ui.set_backend_state("daemon-crashed".into());
+                                    ui.set_device_name("".into());
+                                    ui.set_pen_data_available(false);
+                                }
+                            });
+                        } else {
+                            let weak_ui = ui.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = weak_ui.upgrade() {
+                                    publish_applied_area(&ui, applied);
+                                }
+                            });
                         }
                     }
                 }
@@ -854,9 +1014,44 @@ fn backend_worker(
         }
 
         if client.is_none() {
-            match DaemonClient::connect() {
+            if !connect_requested {
+                let Ok(command) = command_receiver.recv() else {
+                    break;
+                };
+                pending_command = Some(command);
+                continue;
+            }
+
+            if !daemon_is_running() {
+                connect_requested = false;
+                detect_requested = false;
+                refresh_requested = true;
+                automatic_mapping_attempted = false;
+                driver_settings = None;
+                last_ipc_error.clear();
+                let weak_ui = ui.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = weak_ui.upgrade() {
+                        ui.set_backend_state("daemon-not-running".into());
+                        ui.set_device_name("".into());
+                        ui.set_pen_data_available(false);
+                    }
+                });
+                let Ok(command) = command_receiver.recv() else {
+                    break;
+                };
+                pending_command = Some(command);
+                continue;
+            }
+
+            let generation = next_generation;
+            match DaemonClient::connect(backend_events.clone(), generation) {
                 Ok(connection) => {
                     client = Some(connection);
+                    active_generation = generation;
+                    next_generation += 1;
+                    refresh_requested = true;
+                    driver_settings = None;
                     last_ipc_error.clear();
                 }
                 Err(error) => {
@@ -871,19 +1066,29 @@ fn backend_worker(
                             ui.set_backend_state("daemon-running".into());
                         }
                     });
-                    thread::sleep(Duration::from_millis(1200));
+                    pending_command = command_receiver
+                        .recv_timeout(BACKEND_RECONNECT_INTERVAL)
+                        .ok();
                     continue;
                 }
             }
         }
 
-        let detect =
-            std::mem::take(&mut detect_requested) || BACKEND_RETRY.swap(false, Ordering::Relaxed);
-        let result = client
-            .as_mut()
-            .map(|connection| query_backend(connection, detect, &displays));
+        let detect = std::mem::take(&mut detect_requested);
+        let refresh = std::mem::take(&mut refresh_requested);
+        let result = (detect || refresh).then(|| {
+            client.as_mut().map(|connection| {
+                query_backend(
+                    connection,
+                    detect,
+                    &displays,
+                    &mut automatic_mapping_attempted,
+                    &mut driver_settings,
+                )
+            })
+        });
 
-        if let Some(Ok(snapshot)) = result {
+        if let Some(Some(Ok(snapshot))) = result {
             last_ipc_error.clear();
             #[cfg(debug_assertions)]
             {
@@ -907,26 +1112,30 @@ fn backend_worker(
                     publish_backend_snapshot(&ui, snapshot);
                 }
             });
-        } else {
-            if let Some(Err(error)) = result {
-                let message = error.to_string();
-                if message != last_ipc_error {
-                    eprintln!("OpenTabletDriver IPC request failed: {message}");
-                    last_ipc_error = message;
-                }
+        } else if let Some(Some(Err(error))) = result {
+            let message = error.to_string();
+            if message != last_ipc_error {
+                eprintln!("OpenTabletDriver IPC request failed: {message}");
+                last_ipc_error = message;
             }
             client = None;
+            connect_requested = false;
+            refresh_requested = true;
+            driver_settings = None;
             let weak_ui = ui.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(ui) = weak_ui.upgrade() {
-                    ui.set_backend_state("daemon-running".into());
+                    ui.set_backend_state("daemon-crashed".into());
                     ui.set_device_name("".into());
                     ui.set_pen_data_available(false);
                 }
             });
         }
 
-        thread::sleep(Duration::from_millis(1200));
+        let Ok(command) = command_receiver.recv() else {
+            break;
+        };
+        pending_command = Some(command);
     }
 }
 
@@ -1647,7 +1856,6 @@ fn main() -> Result<(), slint::PlatformError> {
     let weak_ui = ui.as_weak();
     let retry_commands = backend_commands.clone();
     ui.on_retry_backend(move || {
-        BACKEND_RETRY.store(true, Ordering::Relaxed);
         let _ = retry_commands.send(BackendCommand::Detect);
         if let Some(ui) = weak_ui.upgrade() {
             ui.set_backend_state(backend_state().into());
@@ -1657,10 +1865,12 @@ fn main() -> Result<(), slint::PlatformError> {
     let weak_ui = ui.as_weak();
     let start_commands = backend_commands.clone();
     ui.on_start_daemon(move || {
-        BACKEND_RETRY.store(true, Ordering::Relaxed);
-        let _ = start_commands.send(BackendCommand::Detect);
+        let started = start_daemon();
+        if started {
+            let _ = start_commands.send(BackendCommand::Detect);
+        }
         if let Some(ui) = weak_ui.upgrade() {
-            ui.set_backend_state(if start_daemon() {
+            ui.set_backend_state(if started {
                 "daemon-starting".into()
             } else {
                 "daemon-not-running".into()
