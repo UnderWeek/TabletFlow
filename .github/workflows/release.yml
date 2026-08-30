@@ -66,11 +66,31 @@ jobs:
           daemon_path="$(./packaging/build-daemon.sh "${{ matrix.rid }}" build/otd)"
           echo "daemon_path=$daemon_path" >> "$GITHUB_OUTPUT"
 
+      - name: Import code signing certificate
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CODESIGN_PASSWORD: ${{ secrets.MACOS_CODESIGN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/tabletflow-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          CERT_PATH="$RUNNER_TEMP/tabletflow-cert.p12"
+          echo "$MACOS_CERT_P12_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 900 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MACOS_CODESIGN_PASSWORD" -A \
+            -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+
       - name: Package macOS DMG
         env:
           OTD_DAEMON_PATH: ${{ steps.build-daemon.outputs.daemon_path }}
           OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
           TABLETFLOW_ARCH: ${{ matrix.arch }}
+          CODESIGN_IDENTITY: TabletFlow Self-Signed
         run: |
           VERSION="${RELEASE_TAG#v}"
           if [[ "$VERSION" == "$RELEASE_TAG" ]]; then VERSION="0.1.0"; fi

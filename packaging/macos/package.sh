@@ -41,10 +41,26 @@ if [[ -n "${OTD_LICENSE_PATH:-}" && -f "$OTD_LICENSE_PATH" ]]; then
 fi
 chmod +x "$APP_DIR/Contents/MacOS/TabletFlow" "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
 
-# The daemon is published with code signing disabled (see build-daemon.sh).
-# Apple Silicon refuses to run unsigned code at all (SIGKILL on launch), so
-# apply an ad-hoc signature here to make the daemon runnable on arm64.
-codesign --force --sign - "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon"
+# Apple Silicon refuses to run unsigned code at all, so both binaries must be
+# signed. Ad-hoc signing (--sign -) derives the identity from the binary's own
+# hash, which changes every build and invalidates any TCC grant (Input
+# Monitoring, Accessibility) the user gave the previous release. Signing with
+# a stable identity (real or self-signed) keeps that grant across releases.
+# Falls back to ad-hoc only when no such identity is available (local dev).
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-TabletFlow Self-Signed}"
+
+sign_binary() {
+    local target="$1"
+    local identifier="$2"
+    if codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$identifier" "$target" 2>/dev/null; then
+        return 0
+    fi
+    echo "Signing identity '$CODESIGN_IDENTITY' not found, falling back to ad-hoc signing for $(basename "$target")" >&2
+    codesign --force --sign - --identifier "$identifier" "$target"
+}
+
+sign_binary "$APP_DIR/Contents/MacOS/OpenTabletDriver.Daemon" "com.underweek.tabletflow.daemon"
+sign_binary "$APP_DIR/Contents/MacOS/TabletFlow" "com.underweek.tabletflow"
 
 ln -s /Applications "$STAGING_DIR/Applications"
 cp -R "$APP_DIR" "$STAGING_DIR/TabletFlow.app"

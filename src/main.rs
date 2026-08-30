@@ -1704,6 +1704,66 @@ fn embedded_daemon_path() -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
+fn find_pids_for_path(path: &PathBuf) -> Vec<u32> {
+    let path_str = path.to_string_lossy();
+
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -eq '{}' }} | Select-Object -ExpandProperty ProcessId",
+            path_str.replace('\'', "''")
+        );
+        return Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .output()
+            .map(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter_map(|line| line.trim().parse::<u32>().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new("pgrep")
+            .args(["-f", &path_str])
+            .output()
+            .map(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter_map(|line| line.trim().parse::<u32>().ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+fn kill_pid(pid: u32) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+    }
+}
+
+fn kill_orphaned_daemons(path: &PathBuf) {
+    let pids = find_pids_for_path(path);
+    if pids.is_empty() {
+        return;
+    }
+    for pid in pids {
+        kill_pid(pid);
+    }
+    thread::sleep(Duration::from_millis(200));
+}
+
 fn owned_daemon_is_running() -> bool {
     let Ok(mut daemon) = daemon_process().lock() else {
         return false;
@@ -1756,13 +1816,18 @@ fn backend_state() -> &'static str {
 }
 
 fn start_daemon() -> bool {
-    if daemon_is_running() {
+    if owned_daemon_is_running() {
         return true;
     }
 
     let Some(path) = embedded_daemon_path() else {
         return false;
     };
+
+    // Any process still running from this exact binary path is an orphan we
+    // lost our `Child` handle to (previous crash, force-quit, etc). It must
+    // be killed here, otherwise we'd never be able to stop it again.
+    kill_orphaned_daemons(&path);
 
     let mut command = if path.extension().is_some_and(|extension| extension == "dll") {
         let mut command = Command::new("dotnet");
