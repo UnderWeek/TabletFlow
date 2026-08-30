@@ -1037,24 +1037,23 @@ component StatusPill inherits Rectangle {
     border-radius: 15px;
     background: root.danger ? AppTheme.danger-soft : (root.positive ? AppTheme.success-soft : AppTheme.accent-soft);
 
-    HorizontalLayout {
-        padding-left: 11px;
-        padding-right: 12px;
-        spacing: 8px;
-        cross-axis-alignment: center;
-        Rectangle {
-            width: 7px;
-            height: 7px;
-            border-radius: 4px;
-            background: root.danger ? AppTheme.danger : (root.positive ? AppTheme.success : AppTheme.accent-color);
-        }
-        Text {
-            text: root.label;
-            color: root.danger ? AppTheme.danger : (root.positive ? AppTheme.success : AppTheme.text-secondary);
-            font-size: 11px;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
+    Rectangle {
+        x: 18px;
+        y: (parent.height - self.height) / 2;
+        width: 7px;
+        height: 7px;
+        border-radius: 4px;
+        background: root.danger ? AppTheme.danger : (root.positive ? AppTheme.success : AppTheme.accent-color);
+    }
+    Text {
+        text: root.label;
+        color: root.danger ? AppTheme.danger : (root.positive ? AppTheme.success : AppTheme.text-secondary);
+        font-size: 11px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
     }
 }
 
@@ -1168,7 +1167,6 @@ component DeviceAction inherits Rectangle {
 component DeviceOverview inherits Rectangle {
     in property <string> device-name;
     in property <string> active-profile;
-    callback configure-area();
     callback open-settings();
 
     background: AppTheme.canvas;
@@ -1243,58 +1241,6 @@ component DeviceOverview inherits Rectangle {
                                     wrap: word-wrap;
                                 }
                                 Rectangle { height: 8px; }
-                                AppButton {
-                                    label: "Configure active area";
-                                    primary: true;
-                                    button-width: 176px;
-                                    clicked => { root.configure-area(); }
-                                }
-                            }
-
-                            Rectangle {
-                                min-width: 280px;
-                                horizontal-stretch: 2;
-                                height: 190px;
-                                border-radius: 26px;
-                                background: AppTheme.surface-shell;
-                                border-width: 1px;
-                                border-color: AppTheme.line-strong;
-                                drop-shadow-blur: 22px;
-                                drop-shadow-color: AppTheme.shadow;
-                                drop-shadow-offset-y: 10px;
-
-                                Rectangle {
-                                    x: 12px;
-                                    y: 12px;
-                                    width: parent.width - 24px;
-                                    height: parent.height - 24px;
-                                    border-radius: 18px;
-                                    background: AppTheme.surface-alt;
-                                    border-width: 1px;
-                                    border-color: AppTheme.line;
-
-                                    Rectangle {
-                                        x: 18px;
-                                        y: 18px;
-                                        width: parent.width - 36px;
-                                        height: parent.height - 36px;
-                                        border-radius: 13px;
-                                        background: AppTheme.accent-soft;
-                                        border-width: 1px;
-                                        border-color: AppTheme.accent-color;
-                                        Text {
-                                            text: "ACTIVE AREA";
-                                            color: AppTheme.accent-color;
-                                            font-size: 10px;
-                                            font-weight: 700;
-                                            letter-spacing: 1.1px;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                            width: parent.width;
-                                            height: parent.height;
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -1304,12 +1250,6 @@ component DeviceOverview inherits Rectangle {
                 SectionHeader { title: "Quick controls"; hint: ""; }
                 HorizontalLayout {
                     spacing: 14px;
-                    DeviceAction {
-                        icon: "area";
-                        label: "Active area";
-                        detail: "Size, position and rotation";
-                        clicked => { root.configure-area(); }
-                    }
                     DeviceAction {
                         icon: "settings";
                         label: "App settings";
@@ -3286,7 +3226,6 @@ export component MainWindow inherits Window {
                 if root.active-page == "Overview" && root.backend-state == "ready" && root.device-name != "": DeviceOverview {
                     device-name: root.device-name;
                     active-profile: root.active-profile;
-                    configure-area => { root.navigate("Area"); }
                     open-settings => { root.navigate("Settings"); }
                 }
                 if root.active-page == "Overview"

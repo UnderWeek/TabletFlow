@@ -142,6 +142,8 @@ OpenTabletDriver daemon уже находится внутри приложен�
 
 TabletFlow использует Rust и Slint. Интерфейс компилируется в нативный бинарник — без WebView и JavaScript runtime.
 
+Настройки приложения на macOS, Windows и Linux сохраняются в `~/.tabletflow/settings.conf`.
+
 ```bash
 cargo run
 cargo build --release

@@ -998,11 +998,28 @@ fn parse_float(value: &str, fallback: f32, minimum: f32, maximum: f32) -> f32 {
         .unwrap_or(fallback)
 }
 
+fn user_home_directory() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(PathBuf::from)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
+
 fn settings_path() -> Option<PathBuf> {
+    user_home_directory().map(|home| home.join(".tabletflow/settings.conf"))
+}
+
+fn legacy_settings_path() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
+        user_home_directory()
             .map(|home| home.join("Library/Application Support/TabletFlow/settings.conf"))
     }
 
@@ -1018,9 +1035,7 @@ fn settings_path() -> Option<PathBuf> {
         if let Some(config_home) = std::env::var_os("XDG_CONFIG_HOME") {
             return Some(PathBuf::from(config_home).join("TabletFlow/settings.conf"));
         }
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .map(|home| home.join(".config/TabletFlow/settings.conf"))
+        user_home_directory().map(|home| home.join(".config/TabletFlow/settings.conf"))
     }
 }
 
@@ -1030,7 +1045,13 @@ fn load_settings() -> Settings {
         return settings;
     };
 
-    let Ok(contents) = fs::read_to_string(path) else {
+    let contents = fs::read_to_string(&path).or_else(|_| {
+        legacy_settings_path()
+            .filter(|legacy_path| legacy_path != &path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No legacy settings file"))
+            .and_then(fs::read_to_string)
+    });
+    let Ok(contents) = contents else {
         return settings;
     };
 
@@ -1553,6 +1574,9 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = MainWindow::new()?;
     apply_settings(&ui, &settings);
+    // Create the shared settings file on first launch and migrate any values
+    // that were loaded from the older platform-specific location.
+    let _ = save_settings(&ui);
     let (input_monitoring_granted, accessibility_granted) = macos_permissions();
     ui.set_permission_platform(
         if cfg!(target_os = "macos") {

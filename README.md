@@ -142,6 +142,8 @@ The current ARM64 build is distributed without an Apple Developer signature, so 
 
 TabletFlow uses Rust and Slint. The UI is compiled into the native binary, with no WebView or JavaScript runtime.
 
+Application preferences are stored in `~/.tabletflow/settings.conf` on macOS, Windows and Linux.
+
 ```bash
 cargo run
 cargo build --release
