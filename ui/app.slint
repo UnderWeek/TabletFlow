@@ -2247,6 +2247,7 @@ component AreaControls inherits Rectangle {
     in-out property <string> draft-x;
     in-out property <string> draft-y;
     in-out property <string> draft-rotation;
+    in-out property <string> draft-frequency;
     in-out property <int> monitor-index: -1;
     in property <[string]> monitor-options: [];
     in-out property <bool> dirty;
@@ -2262,12 +2263,13 @@ component AreaControls inherits Rectangle {
     out property <bool> x-valid: root.draft-x.is-float();
     out property <bool> y-valid: root.draft-y.is-float();
     out property <bool> rotation-valid: root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360;
-    out property <bool> values-valid: root.width-valid && root.height-valid && root.x-valid && root.y-valid && root.rotation-valid;
+    out property <bool> frequency-valid: root.draft-frequency.is-float() && root.draft-frequency.to-float() >= 1 && root.draft-frequency.to-float() <= 1000;
+    out property <bool> values-valid: root.width-valid && root.height-valid && root.x-valid && root.y-valid && root.rotation-valid && root.frequency-valid;
     out property <string> status-text: root.apply-state == "waiting" ? "Waiting for OpenTabletDriver…" : (root.apply-state == "confirmed" ? "Values confirmed by OpenTabletDriver" : (root.apply-state == "unconfirmed" ? "OpenTabletDriver did not confirm the change" : (root.dirty ? (root.values-valid ? "Input checks passed — ready to apply" : "Check the highlighted values") : "Edit a value to enable Apply")));
 
     min-width: 300px;
     horizontal-stretch: 2;
-    height: AppTheme.compact ? 512px : 552px;
+    height: AppTheme.compact ? 566px : 610px;
     border-radius: 26px;
     background: AppTheme.surface-shell;
     border-width: 1px;
@@ -2352,6 +2354,14 @@ component AreaControls inherits Rectangle {
                 valid: !root.dirty || root.rotation-valid;
                 edited => { root.edited(); }
             }
+            NumericField {
+                label: "Frequency";
+                suffix: "Hz";
+                enabled: root.apply-state != "waiting";
+                value <=> root.draft-frequency;
+                valid: !root.dirty || root.frequency-valid;
+                edited => { root.edited(); }
+            }
 
             Rectangle { vertical-stretch: 1; }
             Rectangle {
@@ -2419,19 +2429,22 @@ component AreaEditor inherits Rectangle {
     in property <string> area-x;
     in property <string> area-y;
     in property <string> area-rotation;
+    in property <string> area-frequency;
     property <string> draft-width: root.area-width;
     property <string> draft-height: root.area-height;
     property <string> draft-x: root.area-x;
     property <string> draft-y: root.area-y;
     property <string> draft-rotation: root.area-rotation;
+    property <string> draft-frequency: root.area-frequency;
     property <int> draft-monitor-index: root.monitor-index;
     property <bool> dirty: false;
     property <string> apply-state: "idle";
     property <bool> values-valid: root.draft-width.is-float() && root.draft-width.to-float() > 0
         && root.draft-height.is-float() && root.draft-height.to-float() > 0
         && root.draft-x.is-float() && root.draft-y.is-float()
-        && root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360;
-    callback apply-area(string, string, string, string, string, int);
+        && root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360
+        && root.draft-frequency.is-float() && root.draft-frequency.to-float() >= 1 && root.draft-frequency.to-float() <= 1000;
+    callback apply-area(string, string, string, string, string, string, int);
 
     pure function same-number(a: string, b: string) -> bool {
         return a.is-float() && b.is-float() && abs(a.to-float() - b.to-float()) < 0.005;
@@ -2444,6 +2457,7 @@ component AreaEditor inherits Rectangle {
                 && root.same-number(root.area-x, root.draft-x)
                 && root.same-number(root.area-y, root.draft-y)
                 && root.same-number(root.area-rotation, root.draft-rotation)
+                && root.same-number(root.area-frequency, root.draft-frequency)
                 && root.monitor-index == root.draft-monitor-index {
                 root.apply-state = "confirmed";
                 root.dirty = false;
@@ -2455,6 +2469,7 @@ component AreaEditor inherits Rectangle {
             root.draft-x = root.area-x;
             root.draft-y = root.area-y;
             root.draft-rotation = root.area-rotation;
+            root.draft-frequency = root.area-frequency;
             root.draft-monitor-index = root.monitor-index;
             root.apply-state = "idle";
         }
@@ -2466,6 +2481,7 @@ component AreaEditor inherits Rectangle {
         root.draft-x = root.area-x;
         root.draft-y = root.area-y;
         root.draft-rotation = root.area-rotation;
+        root.draft-frequency = root.area-frequency;
         root.draft-monitor-index = root.monitor-index;
         root.dirty = false;
         root.apply-state = "idle";
@@ -2477,6 +2493,7 @@ component AreaEditor inherits Rectangle {
     changed area-x => { root.sync-from-source(); }
     changed area-y => { root.sync-from-source(); }
     changed area-rotation => { root.sync-from-source(); }
+    changed area-frequency => { root.sync-from-source(); }
     changed monitor-index => { root.sync-from-source(); }
     changed device-name => { root.revert-draft(); }
 
@@ -2536,6 +2553,7 @@ component AreaEditor inherits Rectangle {
                         draft-x <=> root.draft-x;
                         draft-y <=> root.draft-y;
                         draft-rotation <=> root.draft-rotation;
+                        draft-frequency <=> root.draft-frequency;
                         monitor-index <=> root.draft-monitor-index;
                         monitor-options: root.monitor-options;
                         dirty <=> root.dirty;
@@ -2546,12 +2564,13 @@ component AreaEditor inherits Rectangle {
                         refresh => { root.revert-draft(); }
                         apply => {
                             root.apply-state = "waiting";
-                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-monitor-index);
+                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-frequency, root.draft-monitor-index);
                             if root.same-number(root.area-width, root.draft-width)
                                 && root.same-number(root.area-height, root.draft-height)
                                 && root.same-number(root.area-x, root.draft-x)
                                 && root.same-number(root.area-y, root.draft-y)
                                 && root.same-number(root.area-rotation, root.draft-rotation)
+                                && root.same-number(root.area-frequency, root.draft-frequency)
                                 && root.monitor-index == root.draft-monitor-index {
                                 root.apply-state = "confirmed";
                                 root.dirty = false;
@@ -2584,6 +2603,7 @@ component AreaEditor inherits Rectangle {
                         draft-x <=> root.draft-x;
                         draft-y <=> root.draft-y;
                         draft-rotation <=> root.draft-rotation;
+                        draft-frequency <=> root.draft-frequency;
                         monitor-index <=> root.draft-monitor-index;
                         monitor-options: root.monitor-options;
                         dirty <=> root.dirty;
@@ -2594,12 +2614,13 @@ component AreaEditor inherits Rectangle {
                         refresh => { root.revert-draft(); }
                         apply => {
                             root.apply-state = "waiting";
-                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-monitor-index);
+                            root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-frequency, root.draft-monitor-index);
                             if root.same-number(root.area-width, root.draft-width)
                                 && root.same-number(root.area-height, root.draft-height)
                                 && root.same-number(root.area-x, root.draft-x)
                                 && root.same-number(root.area-y, root.draft-y)
                                 && root.same-number(root.area-rotation, root.draft-rotation)
+                                && root.same-number(root.area-frequency, root.draft-frequency)
                                 && root.monitor-index == root.draft-monitor-index {
                                 root.apply-state = "confirmed";
                                 root.dirty = false;
@@ -2630,14 +2651,15 @@ component AreaPage inherits Rectangle {
     in property <string> area-x;
     in property <string> area-y;
     in property <string> area-rotation;
+    in property <string> area-frequency;
     callback retry-detection();
     callback start-driver();
-    callback apply-area(string, string, string, string, string, string, int);
+    callback apply-area(string, string, string, string, string, string, string, int);
 
     AreaEditor {
         visible: root.backend-state == "ready" && root.device-name != "";
         device-name: root.device-name;
-        has-data: root.area-width != "" && root.area-height != "" && root.area-x != "" && root.area-y != "" && root.area-rotation != "";
+        has-data: root.area-width != "" && root.area-height != "" && root.area-x != "" && root.area-y != "" && root.area-rotation != "" && root.area-frequency != "";
         display-width: root.display-width;
         display-height: root.display-height;
         tablet-width: root.tablet-width;
@@ -2649,8 +2671,9 @@ component AreaPage inherits Rectangle {
         area-x: root.area-x;
         area-y: root.area-y;
         area-rotation: root.area-rotation;
-        apply-area(width, height, x, y, rotation, monitor) => {
-            root.apply-area(root.device-name, width, height, x, y, rotation, monitor);
+        area-frequency: root.area-frequency;
+        apply-area(width, height, x, y, rotation, frequency, monitor) => {
+            root.apply-area(root.device-name, width, height, x, y, rotation, frequency, monitor);
         }
     }
     if root.backend-state != "ready" || root.device-name == "": EmptyState {
@@ -3301,6 +3324,7 @@ export component MainWindow inherits Window {
     in-out property <string> area-x: "";
     in-out property <string> area-y: "";
     in-out property <string> area-rotation: "";
+    in-out property <string> area-frequency: "1000";
     in-out property <[string]> monitor-options: ["Primary display · 1920 × 1080"];
     in-out property <int> monitor-index: -1;
     in-out property <bool> pen-data-available: false;
@@ -3332,7 +3356,7 @@ export component MainWindow inherits Window {
     callback navigate(string);
     callback start-daemon();
     callback retry-backend();
-    callback apply-area(string, string, string, string, string, string, int);
+    callback apply-area(string, string, string, string, string, string, string, int);
     callback open-github();
     callback settings-changed();
     callback request-permissions();
@@ -3477,10 +3501,11 @@ export component MainWindow inherits Window {
                     area-x: root.area-x;
                     area-y: root.area-y;
                     area-rotation: root.area-rotation;
+                    area-frequency: root.area-frequency;
                     retry-detection => { root.retry-backend(); }
                     start-driver => { root.start-daemon(); }
-                    apply-area(tablet, width, height, x, y, rotation, monitor) => {
-                        root.apply-area(tablet, width, height, x, y, rotation, monitor);
+                    apply-area(tablet, width, height, x, y, rotation, frequency, monitor) => {
+                        root.apply-area(tablet, width, height, x, y, rotation, frequency, monitor);
                     }
                 }
                 if root.active-page == "Settings": SettingsPage {

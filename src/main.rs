@@ -226,6 +226,7 @@ struct BackendSnapshot {
     area_x: String,
     area_y: String,
     area_rotation: String,
+    area_frequency: String,
     monitor_index: i32,
     pen_data_available: bool,
 }
@@ -274,6 +275,7 @@ enum BackendCommand {
         x: String,
         y: String,
         rotation: String,
+        frequency: String,
         display: Option<DisplayInfo>,
     },
 }
@@ -656,6 +658,35 @@ fn settings_for_tablet(settings: &Value, tablet_name: &str) -> Option<Value> {
     })
 }
 
+fn filter_frequency(profile: &Value) -> String {
+    let Some(filters) = json_member(profile, "Filters").and_then(Value::as_array) else {
+        return "1000".into();
+    };
+
+    let frequency_from = |filter: &Value| {
+        json_member(filter, "Settings")
+            .and_then(Value::as_array)
+            .and_then(|settings| {
+                settings.iter().find_map(|setting| {
+                    (json_string(setting, "Property").as_deref() == Some("Frequency"))
+                        .then(|| json_number_string(setting, "Value"))
+                })
+            })
+            .filter(|value| !value.is_empty())
+    };
+
+    filters
+        .iter()
+        .filter(|filter| {
+            json_member(filter, "Enable")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .find_map(frequency_from)
+        .or_else(|| filters.iter().find_map(frequency_from))
+        .unwrap_or_else(|| "1000".into())
+}
+
 fn query_backend(
     client: &mut DaemonClient,
     detect: bool,
@@ -682,6 +713,7 @@ fn query_backend(
         preview_height: 95.0,
         tablet_width: 152.0,
         tablet_height: 95.0,
+        area_frequency: "1000".into(),
         monitor_index: -1,
         ..Default::default()
     };
@@ -703,6 +735,7 @@ fn query_backend(
     }
     if let Some(settings) = driver_settings.as_ref() {
         if let Some(profile) = settings_for_tablet(settings, &device_name) {
+            snapshot.area_frequency = filter_frequency(&profile);
             if let Some(absolute) = json_member(&profile, "AbsoluteModeSettings") {
                 if let Some(display_area) = json_member(absolute, "Display") {
                     let width = json_member(display_area, "Width").and_then(Value::as_f64);
@@ -769,6 +802,7 @@ fn query_backend(
                         x: snapshot.area_x.clone(),
                         y: snapshot.area_y.clone(),
                         rotation: snapshot.area_rotation.clone(),
+                        frequency: snapshot.area_frequency.clone(),
                         display: Some(display.clone()),
                     },
                 )?;
@@ -793,6 +827,7 @@ fn apply_area(
         x,
         y,
         rotation,
+        frequency,
         display,
     } = command
     else {
@@ -838,6 +873,32 @@ fn apply_area(
         *field = json!(number);
     }
 
+    let frequency = frequency
+        .parse::<f64>()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid frequency value"))?;
+    if !frequency.is_finite() || !(1.0..=1000.0).contains(&frequency) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Frequency must be between 1 and 1000 Hz",
+        ));
+    }
+    if let Some(filters) = json_member_mut(profile, "Filters").and_then(Value::as_array_mut) {
+        for filter in filters {
+            let Some(filter_settings) =
+                json_member_mut(filter, "Settings").and_then(Value::as_array_mut)
+            else {
+                continue;
+            };
+            for setting in filter_settings {
+                if json_string(setting, "Property").as_deref() == Some("Frequency") {
+                    if let Some(value) = json_member_mut(setting, "Value") {
+                        *value = json!(frequency);
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(display) = display {
         let display_area = json_member_mut(profile, "AbsoluteModeSettings")
             .and_then(|absolute| json_member_mut(absolute, "Display"))
@@ -874,6 +935,7 @@ fn publish_backend_snapshot(ui: &MainWindow, snapshot: BackendSnapshot) {
     ui.set_area_x(snapshot.area_x.into());
     ui.set_area_y(snapshot.area_y.into());
     ui.set_area_rotation(snapshot.area_rotation.into());
+    ui.set_area_frequency(snapshot.area_frequency.into());
     // Keep an unmatched virtual-screen mapping as "no specific display".
     // That preserves the driver's current mapping until the user chooses one.
     ui.set_monitor_index(snapshot.monitor_index);
@@ -887,6 +949,7 @@ fn publish_applied_area(ui: &MainWindow, command: BackendCommand) {
         x,
         y,
         rotation,
+        frequency,
         display,
         ..
     } = command
@@ -899,6 +962,7 @@ fn publish_applied_area(ui: &MainWindow, command: BackendCommand) {
     ui.set_area_x(x.into());
     ui.set_area_y(y.into());
     ui.set_area_rotation(rotation.into());
+    ui.set_area_frequency(frequency.into());
     if let Some(display) = display {
         ui.set_monitor_index(display.index);
         ui.set_area_preview_width(display.width / 10.0);
@@ -1879,21 +1943,24 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     let apply_commands = backend_commands.clone();
-    ui.on_apply_area(move |tablet, width, height, x, y, rotation, monitor| {
-        let display = displays
-            .iter()
-            .find(|display| display.index == monitor)
-            .cloned();
-        let _ = apply_commands.send(BackendCommand::ApplyArea {
-            tablet_name: tablet.to_string(),
-            width: width.to_string(),
-            height: height.to_string(),
-            x: x.to_string(),
-            y: y.to_string(),
-            rotation: rotation.to_string(),
-            display,
-        });
-    });
+    ui.on_apply_area(
+        move |tablet, width, height, x, y, rotation, frequency, monitor| {
+            let display = displays
+                .iter()
+                .find(|display| display.index == monitor)
+                .cloned();
+            let _ = apply_commands.send(BackendCommand::ApplyArea {
+                tablet_name: tablet.to_string(),
+                width: width.to_string(),
+                height: height.to_string(),
+                x: x.to_string(),
+                y: y.to_string(),
+                rotation: rotation.to_string(),
+                frequency: frequency.to_string(),
+                display,
+            });
+        },
+    );
 
     let weak_ui = ui.as_weak();
     let weak_tray = tray.as_weak();
