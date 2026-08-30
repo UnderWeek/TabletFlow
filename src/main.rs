@@ -555,18 +555,18 @@ fn enumerate_windows_displays() -> Vec<DisplayInfo> {
 
     let min_x = bounds
         .iter()
-        .map(|display| display.rect.left)
+        .map(|display: &WindowsDisplayBounds| display.rect.left)
         .min()
         .unwrap_or(0);
     let min_y = bounds
         .iter()
-        .map(|display| display.rect.top)
+        .map(|display: &WindowsDisplayBounds| display.rect.top)
         .min()
         .unwrap_or(0);
     bounds
         .into_iter()
         .enumerate()
-        .map(|(index, display)| {
+        .map(|(index, display): (usize, WindowsDisplayBounds)| {
             let width = (display.rect.right - display.rect.left) as f32;
             let height = (display.rect.bottom - display.rect.top) as f32;
             DisplayInfo {
