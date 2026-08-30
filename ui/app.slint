@@ -1167,7 +1167,17 @@ component DeviceAction inherits Rectangle {
 component DeviceOverview inherits Rectangle {
     in property <string> device-name;
     in property <string> active-profile;
+    in property <[string]> monitor-options: [];
+    in property <int> monitor-index: -1;
+    in property <bool> configuration-ready: false;
     callback open-settings();
+
+    function display-label() -> string {
+        if root.monitor-index >= 0 && root.monitor-index < root.monitor-options.length {
+            return root.monitor-options[root.monitor-index];
+        }
+        return "Display not selected";
+    }
 
     background: AppTheme.canvas;
 
@@ -1216,6 +1226,7 @@ component DeviceOverview inherits Rectangle {
                             padding-top: 30px;
                             padding-bottom: 30px;
                             spacing: 28px;
+                            cross-axis-alignment: center;
 
                             VerticalLayout {
                                 min-width: 270px;
@@ -1241,6 +1252,113 @@ component DeviceOverview inherits Rectangle {
                                     wrap: word-wrap;
                                 }
                                 Rectangle { height: 8px; }
+                            }
+
+                            Rectangle {
+                                min-width: 300px;
+                                horizontal-stretch: 2;
+                                height: 190px;
+                                border-radius: 22px;
+                                background: AppTheme.surface-raised;
+                                border-width: 1px;
+                                border-color: AppTheme.line;
+                                accessible-role: groupbox;
+                                accessible-label: "Current tablet setup";
+
+                                VerticalLayout {
+                                    padding-left: 18px;
+                                    padding-right: 18px;
+                                    padding-top: 14px;
+                                    padding-bottom: 14px;
+                                    spacing: 0px;
+
+                                    HorizontalLayout {
+                                        height: 36px;
+                                        spacing: 6px;
+                                        cross-axis-alignment: center;
+                                        Text {
+                                            text: "Current setup";
+                                            color: AppTheme.text;
+                                            font-size: 13px;
+                                            font-weight: 650;
+                                            horizontal-stretch: 1;
+                                            vertical-alignment: center;
+                                        }
+                                        Rectangle {
+                                            width: 7px;
+                                            height: 7px;
+                                            border-radius: 4px;
+                                            background: AppTheme.success;
+                                        }
+                                        Text {
+                                            text: "Ready";
+                                            color: AppTheme.success;
+                                            font-size: 10px;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    Divider {}
+                                    HorizontalLayout {
+                                        height: 40px;
+                                        cross-axis-alignment: center;
+                                        Text {
+                                            text: "Driver";
+                                            color: AppTheme.text-muted;
+                                            font-size: 11px;
+                                            horizontal-stretch: 1;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: "OpenTabletDriver";
+                                            color: AppTheme.text-secondary;
+                                            font-size: 11px;
+                                            font-weight: 550;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    Divider {}
+                                    HorizontalLayout {
+                                        height: 40px;
+                                        cross-axis-alignment: center;
+                                        Text {
+                                            text: "Display";
+                                            color: AppTheme.text-muted;
+                                            font-size: 11px;
+                                            horizontal-stretch: 1;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: root.display-label();
+                                            color: AppTheme.text-secondary;
+                                            font-size: 11px;
+                                            font-weight: 550;
+                                            horizontal-alignment: right;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                            max-width: 190px;
+                                        }
+                                    }
+                                    Divider {}
+                                    HorizontalLayout {
+                                        height: 40px;
+                                        cross-axis-alignment: center;
+                                        Text {
+                                            text: "Configuration";
+                                            color: AppTheme.text-muted;
+                                            font-size: 11px;
+                                            horizontal-stretch: 1;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: root.configuration-ready ? "Loaded" : "Unavailable";
+                                            color: root.configuration-ready ? AppTheme.success : AppTheme.warning;
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -3226,6 +3344,9 @@ export component MainWindow inherits Window {
                 if root.active-page == "Overview" && root.backend-state == "ready" && root.device-name != "": DeviceOverview {
                     device-name: root.device-name;
                     active-profile: root.active-profile;
+                    monitor-options: root.monitor-options;
+                    monitor-index: root.monitor-index;
+                    configuration-ready: root.pen-data-available;
                     open-settings => { root.navigate("Settings"); }
                 }
                 if root.active-page == "Overview"
