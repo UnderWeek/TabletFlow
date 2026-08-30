@@ -6,6 +6,7 @@ use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecMod
 use std::ffi::c_void;
 use std::fs;
 use std::io::{self, Read, Write};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -19,6 +20,19 @@ use std::os::unix::net::UnixStream;
 static EMBEDDED_DAEMON: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 const DAEMON_PIPE_NAME: &str = "OpenTabletDriver.Daemon";
 const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
+const INSTANCE_GUARD_PORT: u16 = 47219;
+
+fn acquire_instance_guard() -> Option<TcpListener> {
+    match TcpListener::bind(("127.0.0.1", INSTANCE_GUARD_PORT)) {
+        Ok(listener) => Some(listener),
+        Err(error) => {
+            eprintln!(
+                "TabletFlow is already running or its instance guard is unavailable: {error}"
+            );
+            None
+        }
+    }
+}
 
 enum DaemonStream {
     #[cfg(unix)]
@@ -834,6 +848,10 @@ fn apply_area(
         return Ok(());
     };
 
+    // SetSettings recreates OpenTabletDriver's input pipeline. Avoid doing
+    // that when the requested configuration is already active.
+    let original_settings = settings.clone();
+
     let profiles = json_member_mut(settings, "Profiles")
         .and_then(Value::as_array_mut)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Profiles missing"))?;
@@ -917,6 +935,10 @@ fn apply_area(
             };
             *field = json!(number);
         }
+    }
+
+    if *settings == original_settings {
+        return Ok(());
     }
 
     let _ = client.call("SetSettings", json!([settings]))?;
@@ -1839,6 +1861,10 @@ fn open_github() {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    let Some(_instance_guard) = acquire_instance_guard() else {
+        return Ok(());
+    };
+
     let mut settings = load_settings();
     if std::env::args().any(|argument| argument == "--start-minimized") {
         settings.start_with_system = true;
