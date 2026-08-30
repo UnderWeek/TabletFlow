@@ -1057,103 +1057,127 @@ component StatusPill inherits Rectangle {
     }
 }
 
-component DeviceAction inherits Rectangle {
-    in property <string> icon: "";
+component QuickThemeButton inherits Rectangle {
     in property <string> label;
-    in property <string> detail;
+    in property <bool> selected;
     callback clicked();
 
-    min-width: 250px;
-    horizontal-stretch: 1;
-    height: 92px;
-    border-radius: 22px;
-    background: AppTheme.surface-shell;
-    border-width: 1px;
-    border-color: action-focus.has-focus ? AppTheme.accent-color : AppTheme.line;
-    transform-origin: { x: root.width / 2, y: root.height / 2 };
-    transform-scale-x: touch.pressed ? 98% : 100%;
-    transform-scale-y: touch.pressed ? 98% : 100%;
-    forward-focus: action-focus;
+    width: 86px;
+    height: AppTheme.compact ? 38px : 44px;
+    border-radius: 9px;
+    background: root.selected ? (touch.pressed ? AppTheme.accent-pressed : AppTheme.accent-soft) : (touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : transparent));
+    border-width: root.selected || button-focus.has-focus ? 1px : 0px;
+    border-color: button-focus.has-focus ? AppTheme.accent-color : AppTheme.line-strong;
+    forward-focus: button-focus;
     accessible-role: button;
-    accessible-label: root.label + ". " + root.detail;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
     accessible-action-default => { touch.clicked(); }
-    animate transform-scale-x, transform-scale-y, border-color {
-        duration: AppTheme.reduce-motion ? 80ms : 200ms;
+    animate background, border-color {
+        duration: AppTheme.reduce-motion ? 80ms : 160ms;
         easing: cubic-bezier(0.32, 0.72, 0, 1);
     }
 
-    Rectangle {
-        x: 4px;
-        y: 4px;
-        width: parent.width - 8px;
-        height: parent.height - 8px;
-        border-radius: 18px;
-        background: touch.pressed ? AppTheme.pressed : (touch.has-hover ? AppTheme.hover : AppTheme.surface-raised);
-        animate background {
-            duration: AppTheme.reduce-motion ? 80ms : 180ms;
-            easing: cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        HorizontalLayout {
-            padding-left: 16px;
-            padding-right: 14px;
-            spacing: 13px;
-            cross-axis-alignment: center;
-            Rectangle {
-                width: 42px;
-                height: 42px;
-                border-radius: 14px;
-                background: AppTheme.accent-soft;
-                if root.icon != "": Icon {
-                    name: root.icon;
-                    tint: AppTheme.accent-color;
-                    x: 12px;
-                    y: 12px;
-                }
-            }
-            VerticalLayout {
-                spacing: 4px;
-                horizontal-stretch: 1;
-                vertical-stretch: 1;
-                alignment: center;
-                Text {
-                    text: root.label;
-                    color: AppTheme.text;
-                    font-size: 14px;
-                    font-weight: 600;
-                }
-                Text {
-                    text: root.detail;
-                    color: AppTheme.text-muted;
-                    font-size: 12px;
-                    overflow: elide;
-                }
-            }
-            Rectangle {
-                width: 30px;
-                height: 30px;
-                border-radius: 15px;
-                background: AppTheme.surface-alt;
-                Text {
-                    text: "›";
-                    color: AppTheme.text-secondary;
-                    font-size: 20px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                    y: -1px;
-                }
-            }
-        }
+    Text {
+        text: root.label;
+        color: root.selected ? AppTheme.accent-color : AppTheme.text-secondary;
+        font-size: 12px;
+        font-weight: root.selected ? 650 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
     }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-
-    action-focus := FocusScope {
+    touch := TouchArea { clicked => { root.clicked(); } }
+    button-focus := FocusScope {
         x: 0px;
         width: 0px;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                touch.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component QuickSwitchRow inherits Rectangle {
+    in property <string> icon: "";
+    in property <string> label;
+    in property <string> description;
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled();
+
+    height: AppTheme.compact ? 56px : 62px;
+    border-radius: 15px;
+    opacity: root.enabled ? 1.0 : 0.43;
+    background: touch.pressed && root.enabled ? AppTheme.pressed : (touch.has-hover && root.enabled ? AppTheme.hover : transparent);
+    border-width: switch-focus.has-focus ? 1px : 0px;
+    border-color: AppTheme.accent-color;
+    forward-focus: switch-focus;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-description: root.description;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-action-default => { touch.clicked(); }
+    animate background {
+        duration: AppTheme.reduce-motion ? 80ms : 160ms;
+        easing: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 14px;
+        cross-axis-alignment: center;
+        Icon { name: root.icon; tint: root.enabled ? AppTheme.icon : AppTheme.text-muted; width: 20px; height: 20px; }
+        VerticalLayout {
+            spacing: 3px;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            alignment: center;
+            cross-axis-alignment: start;
+            Text { text: root.label; color: AppTheme.text-secondary; font-size: 13px; }
+            Text { text: root.description; color: AppTheme.text-muted; font-size: 11px; wrap: word-wrap; }
+        }
+        Rectangle {
+            width: 42px;
+            height: 26px;
+            border-radius: 13px;
+            background: root.checked ? AppTheme.accent-color : AppTheme.surface-alt;
+            border-width: 1px;
+            border-color: root.checked ? AppTheme.accent-color : AppTheme.line-strong;
+            Rectangle {
+                x: root.checked ? 19px : 3px;
+                y: 3px;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: root.checked ? AppTheme.accent-on : AppTheme.icon;
+                drop-shadow-blur: 4px;
+                drop-shadow-color: AppTheme.shadow;
+                drop-shadow-offset-y: 2px;
+                animate x {
+                    duration: AppTheme.reduce-motion ? 80ms : 200ms;
+                    easing: cubic-bezier(0.32, 0.72, 0, 1);
+                }
+            }
+            animate background, border-color {
+                duration: AppTheme.reduce-motion ? 80ms : 180ms;
+                easing: cubic-bezier(0.32, 0.72, 0, 1);
+            }
+        }
+    }
+    touch := TouchArea { enabled: root.enabled; clicked => { root.toggled(); } }
+    switch-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
         key-pressed(event) => {
             if event.text == " " || event.text == "\n" {
                 touch.clicked();
@@ -1170,7 +1194,11 @@ component DeviceOverview inherits Rectangle {
     in property <[string]> monitor-options: [];
     in property <int> monitor-index: -1;
     in property <bool> configuration-ready: false;
-    callback open-settings();
+    in-out property <string> theme: "System";
+    in-out property <bool> start-with-system: false;
+    in-out property <bool> start-minimized: false;
+    in-out property <bool> close-to-tray: false;
+    callback settings-changed();
 
     function display-label() -> string {
         if root.monitor-index >= 0 && root.monitor-index < root.monitor-options.length {
@@ -1185,7 +1213,7 @@ component DeviceOverview inherits Rectangle {
         width: parent.width;
         height: parent.height;
         viewport-width: parent.width;
-        viewport-height: max(parent.height, 690px);
+        viewport-height: max(parent.height, 840px);
 
         HorizontalLayout {
             width: parent.width;
@@ -1365,14 +1393,70 @@ component DeviceOverview inherits Rectangle {
                 }
 
                 Rectangle { height: 5px; }
-                SectionHeader { title: "Quick controls"; hint: ""; }
-                HorizontalLayout {
-                    spacing: 14px;
-                    DeviceAction {
-                        icon: "settings";
-                        label: "App settings";
-                        detail: "Appearance and startup";
-                        clicked => { root.open-settings(); }
+                SectionHeader { title: "Quick settings"; hint: ""; }
+                Rectangle {
+                    height: AppTheme.compact ? 250px : 276px;
+                    border-radius: 26px;
+                    background: AppTheme.surface-shell;
+                    border-width: 1px;
+                    border-color: AppTheme.line;
+                    Rectangle {
+                        x: 4px;
+                        y: 4px;
+                        width: parent.width - 8px;
+                        height: parent.height - 8px;
+                        border-radius: 22px;
+                        background: AppTheme.surface-raised;
+                        border-width: 1px;
+                        border-color: AppTheme.line;
+                        accessible-role: groupbox;
+                        accessible-label: "Quick settings";
+
+                        VerticalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            padding-top: 8px;
+                            padding-bottom: 8px;
+                            spacing: 0px;
+
+                            HorizontalLayout {
+                                height: AppTheme.compact ? 54px : 62px;
+                                padding-left: 12px;
+                                padding-right: 8px;
+                                spacing: 12px;
+                                cross-axis-alignment: center;
+                                Icon { name: "theme"; tint: AppTheme.icon; width: 20px; height: 20px; }
+                                Text { text: "Theme"; color: AppTheme.text-secondary; font-size: 13px; font-weight: 500; horizontal-stretch: 1; vertical-alignment: center; }
+                                QuickThemeButton { label: "System"; selected: root.theme == "System"; clicked => { root.theme = "System"; AppTheme.mode = "system"; root.settings-changed(); } }
+                                QuickThemeButton { label: "Light"; selected: root.theme == "Light"; clicked => { root.theme = "Light"; AppTheme.mode = "light"; root.settings-changed(); } }
+                                QuickThemeButton { label: "Dark"; selected: root.theme == "Dark"; clicked => { root.theme = "Dark"; AppTheme.mode = "dark"; root.settings-changed(); } }
+                            }
+                            Divider {}
+                            QuickSwitchRow {
+                                icon: "startup";
+                                label: "Start with system";
+                                description: "Open TabletFlow when you sign in";
+                                checked: root.start-with-system;
+                                toggled => { root.start-with-system = !root.start-with-system; root.settings-changed(); }
+                            }
+                            Divider {}
+                            QuickSwitchRow {
+                                icon: "minimized";
+                                label: "Start minimized";
+                                description: "Open in the background after sign-in";
+                                checked: root.start-minimized;
+                                enabled: root.start-with-system;
+                                toggled => { root.start-minimized = !root.start-minimized; root.settings-changed(); }
+                            }
+                            Divider {}
+                            QuickSwitchRow {
+                                icon: "close";
+                                label: "Keep running after closing";
+                                description: "Keep TabletFlow available from the menu bar or system tray";
+                                checked: root.close-to-tray;
+                                toggled => { root.close-to-tray = !root.close-to-tray; root.settings-changed(); }
+                            }
+                        }
                     }
                 }
 
@@ -3347,7 +3431,11 @@ export component MainWindow inherits Window {
                     monitor-options: root.monitor-options;
                     monitor-index: root.monitor-index;
                     configuration-ready: root.pen-data-available;
-                    open-settings => { root.navigate("Settings"); }
+                    theme <=> root.theme;
+                    start-with-system <=> root.start-with-system;
+                    start-minimized <=> root.start-minimized;
+                    close-to-tray <=> root.close-to-tray;
+                    settings-changed => { root.settings-changed(); }
                 }
                 if root.active-page == "Overview"
                     && (root.backend-state == "unknown"
