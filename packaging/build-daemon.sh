@@ -22,15 +22,21 @@ PUBLISH_OPTIONS=(
     --configuration Release
     --runtime "$RID"
     --self-contained true
-    -p:PublishSingleFile=true
     -p:UseAppHost=true
-    -p:IncludeNativeLibrariesForSelfExtract=true
     -p:DebugType=None
     --output "$OUTPUT_DIR"
 )
 if [[ "$RID" == osx-* ]]; then
     PUBLISH_OPTIONS+=( -p:_EnableMacOSCodeSign=false )
+    PUBLISH_OPTIONS+=( -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true )
+elif [[ "$RID" == linux-* ]]; then
+    PUBLISH_OPTIONS+=( -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true )
 fi
+# Windows is intentionally published as a plain multi-file output rather than a
+# self-extracting single file: PublishSingleFile unpacks its bundled native
+# libraries to a temp directory on every launch, which is slow on Windows
+# (disk I/O plus AV/Defender scanning of the freshly-extracted files) and was
+# the root cause of the daemon taking several seconds to bind its pipe.
 
 "$DOTNET_COMMAND" publish "$PROJECT" "${PUBLISH_OPTIONS[@]}" >&2
 

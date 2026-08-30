@@ -139,7 +139,7 @@ jobs:
       - name: Package Windows ZIP
         shell: pwsh
         env:
-          OTD_DAEMON_PATH: ${{ github.workspace }}/build/otd/OpenTabletDriver.Daemon.exe
+          OTD_DAEMON_DIR: ${{ github.workspace }}/build/otd
           OTD_LICENSE_PATH: ${{ github.workspace }}/opentabletdriver/LICENSE
           TABLETFLOW_BINARY_PATH: ${{ github.workspace }}/target/release/tabletflow.exe
         run: |

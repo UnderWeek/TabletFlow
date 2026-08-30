@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 slint::include_modules!();
 
 use serde_json::{json, Value};
@@ -863,12 +865,13 @@ fn apply_area(
         .and_then(|absolute| json_member_mut(absolute, "Tablet"))
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Tablet area missing"))?;
 
+    let mut requested_area = Vec::with_capacity(5);
     for (name, value) in [
-        ("Width", width),
-        ("Height", height),
-        ("X", x),
-        ("Y", y),
-        ("Rotation", rotation),
+        ("Width", width.as_str()),
+        ("Height", height.as_str()),
+        ("X", x.as_str()),
+        ("Y", y.as_str()),
+        ("Rotation", rotation.as_str()),
     ] {
         let number = value.parse::<f64>().map_err(|_| {
             io::Error::new(
@@ -889,6 +892,7 @@ fn apply_area(
             ));
         };
         *field = json!(number);
+        requested_area.push((name, number));
     }
 
     let frequency = frequency
@@ -938,10 +942,50 @@ fn apply_area(
     }
 
     if *settings == original_settings {
+        eprintln!("apply_area: requested settings match current state, skipping SetSettings");
         return Ok(());
     }
 
+    eprintln!(
+        "apply_area: sending SetSettings for tablet '{tablet_name}' (width={:?}, height={:?}, x={:?}, y={:?}, rotation={:?}, frequency={frequency})",
+        requested_area[0].1, requested_area[1].1, requested_area[2].1, requested_area[3].1, requested_area[4].1
+    );
     let _ = client.call("SetSettings", json!([settings]))?;
+
+    // SetSettings recreates OpenTabletDriver's input pipeline, which is not
+    // guaranteed to complete by the time the RPC call returns (observed to
+    // lag noticeably on Windows). Poll GetSettings briefly so the UI is told
+    // about the actually-applied values instead of just echoing the request.
+    for attempt in 1..=5 {
+        thread::sleep(Duration::from_millis(300));
+        let readback = match client.call("GetSettings", json!([])) {
+            Ok(readback) => readback,
+            Err(error) => {
+                eprintln!("apply_area: readback attempt {attempt} failed: {error}");
+                continue;
+            }
+        };
+        let Some(profile) = settings_for_tablet(&readback, &tablet_name) else {
+            eprintln!("apply_area: readback attempt {attempt} found no profile for '{tablet_name}'");
+            continue;
+        };
+        let Some(area) = json_member(&profile, "AbsoluteModeSettings").and_then(|absolute| json_member(absolute, "Tablet")) else {
+            continue;
+        };
+        let matches = requested_area.iter().all(|(name, expected)| {
+            json_member(area, name)
+                .and_then(Value::as_f64)
+                .is_some_and(|actual| (actual - expected).abs() < 0.005)
+        });
+        if matches {
+            eprintln!("apply_area: readback confirmed on attempt {attempt}");
+            *settings = readback;
+            return Ok(());
+        }
+        eprintln!("apply_area: readback attempt {attempt} does not match requested area yet");
+    }
+
+    eprintln!("apply_area: readback did not confirm requested area within timeout, echoing requested values anyway");
     Ok(())
 }
 
@@ -1010,7 +1054,7 @@ fn backend_worker(
     backend_events: Sender<BackendCommand>,
     displays: Vec<DisplayInfo>,
 ) {
-    let mut client = None;
+    let mut client: Option<DaemonClient> = None;
     let mut detect_requested = false;
     let mut refresh_requested = true;
     let mut automatic_mapping_attempted = false;
@@ -1065,6 +1109,15 @@ fn backend_worker(
                 command @ BackendCommand::ApplyArea { .. } => {
                     if let Some(connection) = client.as_mut() {
                         let applied = command.clone();
+                        if driver_settings.is_none() {
+                            eprintln!("apply_area: driver settings cache empty, fetching before apply");
+                            match connection.call("GetSettings", json!([])) {
+                                Ok(settings) => driver_settings = Some(settings),
+                                Err(error) => {
+                                    eprintln!("apply_area: failed to fetch settings: {error}");
+                                }
+                            }
+                        }
                         let result = driver_settings
                             .as_mut()
                             .ok_or_else(|| {

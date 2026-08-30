@@ -2498,7 +2498,7 @@ component AreaEditor inherits Rectangle {
     changed device-name => { root.revert-draft(); }
 
     apply-timeout := Timer {
-        interval: 6s;
+        interval: 10s;
         running: false;
         triggered => {
             self.running = false;
