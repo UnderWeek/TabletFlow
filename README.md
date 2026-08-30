@@ -101,16 +101,16 @@ The editor currently provides:
 - [ ] Plugins
 - [ ] Diagnostics
 - [x] macOS ARM64 release
-- [ ] Windows & Linux builds
+- [x] Windows & Linux builds (beta)
 
 ## 💻 Platforms
 
 | Platform | Architecture | Target |
 |---|---|---|
 | macOS | ARM64 | ⭐ Primary |
-| macOS | x86-64 | Planned |
-| Windows | x86-64 | Planned |
-| Linux | x86-64 | Planned |
+| macOS | x86-64 | Beta |
+| Windows | x86-64 | Beta |
+| Linux | x86-64 | Beta |
 
 Hardware compatibility is primarily provided by **OpenTabletDriver**.
 
