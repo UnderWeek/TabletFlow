@@ -1869,19 +1869,22 @@ component MonitorPicker inherits Rectangle {
     in-out property <int> selected-index: -1;
     callback changed();
 
-    height: AppTheme.compact ? 70px : 76px;
+    // With one display there is nothing to choose: the backend maps the
+    // tablet to that display automatically, so this control stays out of the way.
+    visible: root.options.length > 1;
+    height: root.options.length > 1 ? (AppTheme.compact ? 70px : 76px) : 0px;
     background: transparent;
 
     VerticalLayout {
         spacing: 5px;
         Text {
-            text: "Target display";
+            text: "Tablet pointer display";
             color: AppTheme.text-secondary;
             font-size: 12px;
             font-weight: 600;
         }
         Text {
-            text: root.selected-index < 0 ? "Current mapping spans all displays · choose one to limit it" : "Choose where the tablet pointer should appear";
+            text: root.selected-index < 0 ? "Choose the display where the tablet pointer should appear" : "The tablet pointer will stay on the selected display";
             color: AppTheme.text-muted;
             font-size: 10px;
         }

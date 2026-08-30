@@ -2,6 +2,8 @@ slint::include_modules!();
 
 use serde_json::{json, Value};
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecModel};
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -179,6 +181,8 @@ struct DisplayInfo {
     height: f32,
     x: f32,
     y: f32,
+    detected: bool,
+    primary: bool,
 }
 
 impl DisplayInfo {
@@ -190,6 +194,8 @@ impl DisplayInfo {
             height: 1080.0,
             x: 960.0,
             y: 540.0,
+            detected: false,
+            primary: true,
         }
     }
 }
@@ -244,6 +250,7 @@ extern "C" {
         display_count: *mut u32,
     ) -> i32;
     fn CGDisplayBounds(display: u32) -> MacRect;
+    fn CGMainDisplayID() -> u32;
 }
 
 #[cfg(target_os = "macos")]
@@ -255,32 +262,39 @@ fn enumerate_macos_displays() -> Vec<DisplayInfo> {
         return vec![DisplayInfo::fallback()];
     }
 
+    let primary_id = unsafe { CGMainDisplayID() };
     let bounds = ids[..count.min(ids.len() as u32) as usize]
         .iter()
-        .map(|id| unsafe { CGDisplayBounds(*id) })
+        .map(|id| (*id, unsafe { CGDisplayBounds(*id) }))
         .collect::<Vec<_>>();
     let min_x = bounds
         .iter()
-        .map(|rect| rect.origin.x)
+        .map(|(_, rect)| rect.origin.x)
         .fold(f64::INFINITY, f64::min);
     let min_y = bounds
         .iter()
-        .map(|rect| rect.origin.y)
+        .map(|(_, rect)| rect.origin.y)
         .fold(f64::INFINITY, f64::min);
 
     bounds
         .into_iter()
         .enumerate()
-        .filter_map(|(index, rect)| {
+        .filter_map(|(index, (id, rect))| {
             let width = rect.size.width as f32;
             let height = rect.size.height as f32;
             (width > 0.0 && height > 0.0).then(|| DisplayInfo {
                 index: index as i32,
-                label: display_label(index, width, height),
+                label: if id == primary_id {
+                    format!("Primary display · {:.0} × {:.0}", width, height)
+                } else {
+                    display_label(index, width, height)
+                },
                 width,
                 height,
                 x: (rect.origin.x - min_x) as f32 + width / 2.0,
                 y: (rect.origin.y - min_y) as f32 + height / 2.0,
+                detected: true,
+                primary: id == primary_id,
             })
         })
         .collect()
@@ -337,7 +351,13 @@ fn enumerate_linux_displays() -> Vec<DisplayInfo> {
         let Ok(y) = geometry[separator..].parse::<f32>() else {
             continue;
         };
-        displays.push((width, height, x, y));
+        displays.push((
+            width,
+            height,
+            x,
+            y,
+            line.split_whitespace().any(|part| part == "primary"),
+        ));
     }
 
     if displays.is_empty() {
@@ -354,18 +374,139 @@ fn enumerate_linux_displays() -> Vec<DisplayInfo> {
     displays
         .into_iter()
         .enumerate()
-        .map(|(index, (width, height, x, y))| DisplayInfo {
+        .map(|(index, (width, height, x, y, primary))| DisplayInfo {
             index: index as i32,
-            label: display_label(index, width, height),
+            label: if primary {
+                format!("Primary display · {:.0} × {:.0}", width, height)
+            } else {
+                display_label(index, width, height)
+            },
             width,
             height,
             x: x - min_x + width / 2.0,
             y: y - min_y + height / 2.0,
+            detected: true,
+            primary,
         })
         .collect()
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct WindowsRect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct WindowsMonitorInfo {
+    size: u32,
+    monitor: WindowsRect,
+    work: WindowsRect,
+    flags: u32,
+}
+
+#[cfg(target_os = "windows")]
+struct WindowsDisplayBounds {
+    rect: WindowsRect,
+    primary: bool,
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn EnumDisplayMonitors(
+        device_context: *mut c_void,
+        clip: *const WindowsRect,
+        callback: Option<unsafe extern "system" fn(isize, isize, *mut WindowsRect, isize) -> i32>,
+        data: isize,
+    ) -> i32;
+    fn GetMonitorInfoW(monitor: isize, info: *mut WindowsMonitorInfo) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn collect_windows_display(
+    monitor: isize,
+    _: isize,
+    _: *mut WindowsRect,
+    data: isize,
+) -> i32 {
+    let mut info = WindowsMonitorInfo {
+        size: std::mem::size_of::<WindowsMonitorInfo>() as u32,
+        monitor: WindowsRect::default(),
+        work: WindowsRect::default(),
+        flags: 0,
+    };
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        return 1;
+    }
+
+    let width = info.monitor.right - info.monitor.left;
+    let height = info.monitor.bottom - info.monitor.top;
+    if width > 0 && height > 0 {
+        let displays = unsafe { &mut *(data as *mut Vec<WindowsDisplayBounds>) };
+        displays.push(WindowsDisplayBounds {
+            rect: info.monitor,
+            primary: info.flags & 1 != 0,
+        });
+    }
+    1
+}
+
+#[cfg(target_os = "windows")]
+fn enumerate_windows_displays() -> Vec<DisplayInfo> {
+    let mut bounds = Vec::new();
+    let result = unsafe {
+        EnumDisplayMonitors(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            Some(collect_windows_display),
+            (&mut bounds as *mut Vec<WindowsDisplayBounds>) as isize,
+        )
+    };
+    if result == 0 || bounds.is_empty() {
+        return vec![DisplayInfo::fallback()];
+    }
+
+    let min_x = bounds
+        .iter()
+        .map(|display| display.rect.left)
+        .min()
+        .unwrap_or(0);
+    let min_y = bounds
+        .iter()
+        .map(|display| display.rect.top)
+        .min()
+        .unwrap_or(0);
+    bounds
+        .into_iter()
+        .enumerate()
+        .map(|(index, display)| {
+            let width = (display.rect.right - display.rect.left) as f32;
+            let height = (display.rect.bottom - display.rect.top) as f32;
+            DisplayInfo {
+                index: index as i32,
+                label: if display.primary {
+                    format!("Primary display · {:.0} × {:.0}", width, height)
+                } else {
+                    display_label(index, width, height)
+                },
+                width,
+                height,
+                x: (display.rect.left - min_x) as f32 + width / 2.0,
+                y: (display.rect.top - min_y) as f32 + height / 2.0,
+                detected: true,
+                primary: display.primary,
+            }
+        })
+        .collect()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn enumerate_displays() -> Vec<DisplayInfo> {
     vec![DisplayInfo::fallback()]
 }
@@ -378,6 +519,11 @@ fn enumerate_displays() -> Vec<DisplayInfo> {
 #[cfg(target_os = "linux")]
 fn enumerate_displays() -> Vec<DisplayInfo> {
     enumerate_linux_displays()
+}
+
+#[cfg(target_os = "windows")]
+fn enumerate_displays() -> Vec<DisplayInfo> {
+    enumerate_windows_displays()
 }
 
 fn selected_display_index(
@@ -519,6 +665,40 @@ fn query_backend(
                 }
             }
             snapshot.pen_data_available = true;
+        }
+    }
+
+    // If the driver's mapping doesn't match a connected display, use the
+    // system primary display. A matching explicit mapping remains untouched.
+    if let Some(display) = displays
+        .iter()
+        .find(|display| display.detected && display.primary)
+        .or_else(|| displays.iter().find(|display| display.detected))
+        .filter(|_| snapshot.monitor_index < 0)
+        .cloned()
+    {
+        if snapshot.pen_data_available
+            && !snapshot.area_width.is_empty()
+            && !snapshot.area_height.is_empty()
+            && !snapshot.area_x.is_empty()
+            && !snapshot.area_y.is_empty()
+            && !snapshot.area_rotation.is_empty()
+        {
+            apply_area(
+                client,
+                BackendCommand::ApplyArea {
+                    tablet_name: device_name,
+                    width: snapshot.area_width.clone(),
+                    height: snapshot.area_height.clone(),
+                    x: snapshot.area_x.clone(),
+                    y: snapshot.area_y.clone(),
+                    rotation: snapshot.area_rotation.clone(),
+                    display: Some(display.clone()),
+                },
+            )?;
+            snapshot.monitor_index = display.index;
+            snapshot.preview_width = display.width / 10.0;
+            snapshot.preview_height = display.height / 10.0;
         }
     }
     Ok(snapshot)
