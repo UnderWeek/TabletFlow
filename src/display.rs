@@ -1,8 +1,6 @@
 //! Platform display enumeration and OpenTabletDriver coordinate mapping.
 
 #[cfg(target_os = "windows")]
-use super::windows_runtime;
-#[cfg(target_os = "windows")]
 use std::ffi::c_void;
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -287,7 +285,6 @@ unsafe extern "system" fn collect_windows_display(
 
 #[cfg(target_os = "windows")]
 fn enumerate_platform_displays() -> Vec<DisplayInfo> {
-    windows_runtime::initialize_process();
     let mut bounds = Vec::new();
     let result = unsafe {
         EnumDisplayMonitors(
