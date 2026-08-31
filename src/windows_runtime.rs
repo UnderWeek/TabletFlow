@@ -73,7 +73,7 @@ const REQUIRED_DAEMON_FILES: &[&str] = &[
 static MANAGED_DAEMON: OnceLock<Mutex<Option<ManagedDaemon>>> = OnceLock::new();
 
 pub(super) struct InstanceGuard {
-    handle: KernelHandle,
+    _handle: KernelHandle,
 }
 
 struct ManagedDaemon {
@@ -179,7 +179,7 @@ pub(super) fn acquire_instance_guard() -> Option<InstanceGuard> {
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
         return None;
     }
-    Some(InstanceGuard { handle })
+    Some(InstanceGuard { _handle: handle })
 }
 
 pub(super) fn connect_pipe() -> io::Result<File> {
@@ -429,12 +429,20 @@ pub(super) fn start_daemon() -> io::Result<StartResult> {
         return Ok(StartResult::AlreadyConnected);
     }
 
+    let daemon_path = validate_embedded_daemon_bundle()?;
     let mut slot = managed_daemon()
         .lock()
         .map_err(|_| io::Error::other("daemon process lock is poisoned"))?;
     if reap_finished_daemon(&mut slot) {
         return Ok(StartResult::AlreadyStarting);
     }
+
+    // Remove only an orphan from this exact package path before deciding that
+    // another daemon owns the global OTD instance. A stale process can remain
+    // alive after a forced UI exit while its pipe is never created; treating it
+    // as healthy would otherwise block recovery indefinitely.
+    terminate_stale_packaged_daemons(&daemon_path);
+
     // A daemon started by the official OpenTabletDriver UI or another
     // installation may take a long time to expose its pipe while it scans HID.
     // Attach to it once ready instead of starting a second process that exits
@@ -442,9 +450,6 @@ pub(super) fn start_daemon() -> io::Result<StartResult> {
     if daemon_process_exists() {
         return Ok(StartResult::AlreadyStarting);
     }
-
-    let daemon_path = validate_embedded_daemon_bundle()?;
-    terminate_stale_packaged_daemons(&daemon_path);
 
     let log_path = daemon_console_log_path();
     if let Some(parent) = log_path.parent() {

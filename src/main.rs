@@ -18,6 +18,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 #[cfg(not(target_os = "windows"))]
 use std::process::Child;
+#[cfg(not(target_os = "windows"))]
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 #[cfg(target_os = "windows")]
@@ -35,6 +36,7 @@ use std::os::unix::net::UnixStream;
 
 #[cfg(not(target_os = "windows"))]
 static EMBEDDED_DAEMON: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+#[cfg(not(target_os = "windows"))]
 const DAEMON_PIPE_NAME: &str = "OpenTabletDriver.Daemon";
 const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
 #[cfg(not(target_os = "windows"))]
@@ -137,7 +139,7 @@ struct DaemonClient {
     responses: Receiver<Value>,
     next_id: u64,
     #[cfg(target_os = "windows")]
-    reader: Option<ReaderGuard>,
+    _reader: Option<ReaderGuard>,
 }
 
 impl DaemonClient {
@@ -209,7 +211,7 @@ impl DaemonClient {
             responses,
             next_id: 1,
             #[cfg(target_os = "windows")]
-            reader: Some(ReaderGuard {
+            _reader: Some(ReaderGuard {
                 cancelled,
                 thread: Some(reader_thread),
             }),
