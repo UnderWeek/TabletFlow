@@ -121,13 +121,21 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "10.x"
+          dotnet-version: "8.0.x"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build TabletFlow
         run: cargo build --release
+
+      - name: Prepare clean OpenTabletDriver output
+        shell: pwsh
+        run: |
+          $daemonOutput = Join-Path $env:GITHUB_WORKSPACE "build/otd"
+          if (Test-Path -LiteralPath $daemonOutput) {
+            Remove-Item -LiteralPath $daemonOutput -Recurse -Force
+          }
 
       - name: Build OpenTabletDriver daemon
         env:
@@ -144,7 +152,44 @@ jobs:
           TABLETFLOW_BINARY_PATH: ${{ github.workspace }}/target/release/tabletflow.exe
         run: |
           $version = if ($env:RELEASE_TAG.StartsWith("v")) { $env:RELEASE_TAG.Substring(1) } else { "0.1.0" }
-          ./packaging/windows/package.ps1 -OutputDirectory dist -Version $version
+          $archivePath = ./packaging/windows/package.ps1 -OutputDirectory dist -Version $version
+          "WINDOWS_ARCHIVE_PATH=$archivePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Smoke-test packaged Windows driver
+        shell: pwsh
+        run: |
+          $smokeDirectory = Join-Path $env:RUNNER_TEMP "TabletFlow Windows тест с пробелом"
+          $stdoutPath = Join-Path $env:RUNNER_TEMP "tabletflow-windows-smoke.stdout.log"
+          $stderrPath = Join-Path $env:RUNNER_TEMP "tabletflow-windows-smoke.stderr.log"
+          if (Test-Path -LiteralPath $smokeDirectory) {
+            Remove-Item -LiteralPath $smokeDirectory -Recurse -Force
+          }
+          New-Item -Path $smokeDirectory -ItemType Directory -Force | Out-Null
+          Expand-Archive -LiteralPath $env:WINDOWS_ARCHIVE_PATH -DestinationPath $smokeDirectory
+
+          $tabletFlowPath = Join-Path $smokeDirectory "TabletFlow.exe"
+          $processOptions = @{
+            FilePath = $tabletFlowPath
+            ArgumentList = "--windows-driver-self-test"
+            WorkingDirectory = $smokeDirectory
+            RedirectStandardOutput = $stdoutPath
+            RedirectStandardError = $stderrPath
+            PassThru = $true
+          }
+          $process = Start-Process @processOptions
+
+          if (-not $process.WaitForExit(240000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath }
+            if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath }
+            throw "Packaged Windows self-test exceeded the 4-minute timeout"
+          }
+          $process.WaitForExit()
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath }
+            if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath }
+            throw "Packaged Windows self-test failed with exit code $($process.ExitCode)"
+          }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

@@ -1,5 +1,10 @@
 #![windows_subsystem = "windows"]
 
+#[cfg(target_os = "windows")]
+mod windows_backend;
+#[cfg(target_os = "windows")]
+mod windows_runtime;
+
 slint::include_modules!();
 
 use serde_json::{json, Value};
@@ -8,10 +13,19 @@ use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecMod
 use std::ffi::c_void;
 use std::fs;
 use std::io::{self, Read, Write};
+#[cfg(not(target_os = "windows"))]
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+#[cfg(not(target_os = "windows"))]
+use std::process::Child;
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+#[cfg(target_os = "windows")]
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+#[cfg(not(target_os = "windows"))]
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -19,11 +33,14 @@ use std::time::Duration;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
+#[cfg(not(target_os = "windows"))]
 static EMBEDDED_DAEMON: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 const DAEMON_PIPE_NAME: &str = "OpenTabletDriver.Daemon";
 const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
+#[cfg(not(target_os = "windows"))]
 const INSTANCE_GUARD_PORT: u16 = 47219;
 
+#[cfg(not(target_os = "windows"))]
 fn acquire_instance_guard() -> Option<TcpListener> {
     match TcpListener::bind(("127.0.0.1", INSTANCE_GUARD_PORT)) {
         Ok(listener) => Some(listener),
@@ -36,11 +53,41 @@ fn acquire_instance_guard() -> Option<TcpListener> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn acquire_instance_guard() -> Option<windows_runtime::InstanceGuard> {
+    windows_runtime::acquire_instance_guard()
+}
+
 enum DaemonStream {
     #[cfg(unix)]
     Unix(UnixStream),
     #[cfg(windows)]
     Windows(std::fs::File),
+}
+
+/// Owns the Windows notification reader and makes dropping a client close the
+/// duplicated named-pipe handle instead of leaving a blocked thread behind.
+#[cfg(target_os = "windows")]
+struct ReaderGuard {
+    cancelled: Arc<AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ReaderGuard {
+    fn drop(&mut self) {
+        let Some(reader) = self.thread.take() else {
+            return;
+        };
+
+        self.cancelled.store(true, Ordering::Release);
+        // A synchronous File::read can remain blocked while the daemon keeps
+        // the pipe open. CancelSynchronousIo wakes that exact reader thread;
+        // repeat until it observes the cancellation flag and exits to cover
+        // the small race between the flag check and ReadFile invocation.
+        windows_runtime::cancel_reader(&reader);
+        let _ = reader.join();
+    }
 }
 
 impl DaemonStream {
@@ -89,6 +136,8 @@ struct DaemonClient {
     stream: DaemonStream,
     responses: Receiver<Value>,
     next_id: u64,
+    #[cfg(target_os = "windows")]
+    reader: Option<ReaderGuard>,
 }
 
 impl DaemonClient {
@@ -106,16 +155,20 @@ impl DaemonClient {
         };
 
         #[cfg(windows)]
-        let stream = DaemonStream::Windows(
-            std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(format!(r"\\.\pipe\{DAEMON_PIPE_NAME}"))?,
-        );
+        let stream = DaemonStream::Windows(windows_runtime::connect_pipe()?);
 
         let mut reader = stream.try_clone()?;
         let (response_sender, responses) = mpsc::channel();
-        thread::spawn(move || loop {
+        #[cfg(target_os = "windows")]
+        let cancelled = Arc::new(AtomicBool::new(false));
+        #[cfg(target_os = "windows")]
+        let reader_cancelled = Arc::clone(&cancelled);
+        let reader_thread = thread::spawn(move || loop {
+            #[cfg(target_os = "windows")]
+            if reader_cancelled.load(Ordering::Acquire) {
+                break;
+            }
+
             match read_rpc_message(&mut reader) {
                 Ok(message) if message.get("id").is_some() => {
                     if response_sender.send(message).is_err() {
@@ -127,13 +180,19 @@ impl DaemonClient {
                         .get("method")
                         .and_then(Value::as_str)
                         .unwrap_or_default();
-                    if method.contains("TabletsChanged") {
+                    if method.contains("TabletsChanged")
+                        || (cfg!(target_os = "windows") && method.contains("Resynchronize"))
+                    {
                         let _ = backend_events.send(BackendCommand::TabletChanged {
                             generation: connection_generation,
                         });
                     }
                 }
                 Err(error) => {
+                    #[cfg(target_os = "windows")]
+                    if reader_cancelled.load(Ordering::Acquire) {
+                        break;
+                    }
                     let _ = backend_events.send(BackendCommand::DriverDisconnected {
                         generation: connection_generation,
                         reason: error.to_string(),
@@ -142,11 +201,18 @@ impl DaemonClient {
                 }
             }
         });
+        #[cfg(not(target_os = "windows"))]
+        drop(reader_thread);
 
         Ok(Self {
             stream,
             responses,
             next_id: 1,
+            #[cfg(target_os = "windows")]
+            reader: Some(ReaderGuard {
+                cancelled,
+                thread: Some(reader_thread),
+            }),
         })
     }
 
@@ -168,7 +234,14 @@ impl DaemonClient {
         loop {
             let response = self
                 .responses
-                .recv_timeout(Duration::from_secs(15))
+                .recv_timeout(if cfg!(target_os = "windows") {
+                    match method {
+                        "DetectTablets" | "SetSettings" => Duration::from_secs(180),
+                        _ => Duration::from_secs(30),
+                    }
+                } else {
+                    Duration::from_secs(15)
+                })
                 .map_err(|error| match error {
                     RecvTimeoutError::Timeout => {
                         io::Error::new(io::ErrorKind::TimedOut, "OpenTabletDriver did not respond")
@@ -189,6 +262,41 @@ impl DaemonClient {
             }
         }
     }
+}
+
+trait DriverRpc {
+    fn rpc_call(&mut self, method: &str, params: Value) -> io::Result<Value>;
+}
+
+impl DriverRpc for DaemonClient {
+    fn rpc_call(&mut self, method: &str, params: Value) -> io::Result<Value> {
+        self.call(method, params)
+    }
+}
+
+/// OTD separates hardware detection from rebuilding the output pipeline. On
+/// Windows an explicit DetectTablets must therefore be followed by reapplying
+/// the current settings; otherwise the UI can show a tablet while pen input is
+/// still disabled. The non-Windows call path passes `false` and is unchanged.
+fn query_tablets<C: DriverRpc>(
+    client: &mut C,
+    detect: bool,
+    restore_pipeline_after_detect: bool,
+    driver_settings: &mut Option<Value>,
+) -> io::Result<Value> {
+    if !detect {
+        return client.rpc_call("GetTablets", json!([]));
+    }
+
+    let tablets = client.rpc_call("DetectTablets", json!([]))?;
+    if restore_pipeline_after_detect {
+        let settings = client.rpc_call("GetSettings", json!([]))?;
+        client.rpc_call("SetSettings", json!([settings]))?;
+        // SetSettings may create a default profile for a newly detected tablet.
+        // Read it back instead of caching the pre-detection settings object.
+        *driver_settings = Some(client.rpc_call("GetSettings", json!([]))?);
+    }
+    Ok(tablets)
 }
 
 fn read_rpc_message(stream: &mut DaemonStream) -> io::Result<Value> {
@@ -542,6 +650,7 @@ unsafe extern "system" fn collect_windows_display(
 
 #[cfg(target_os = "windows")]
 fn enumerate_windows_displays() -> Vec<DisplayInfo> {
+    windows_runtime::initialize_process();
     let mut bounds = Vec::new();
     let result = unsafe {
         EnumDisplayMonitors(
@@ -565,6 +674,11 @@ fn enumerate_windows_displays() -> Vec<DisplayInfo> {
         .map(|display: &WindowsDisplayBounds| display.rect.top)
         .min()
         .unwrap_or(0);
+    let primary_offset = bounds
+        .iter()
+        .find(|display| display.primary)
+        .map(|display| (display.rect.left - min_x, display.rect.top - min_y))
+        .unwrap_or((0, 0));
     bounds
         .into_iter()
         .enumerate()
@@ -580,8 +694,8 @@ fn enumerate_windows_displays() -> Vec<DisplayInfo> {
                 },
                 width,
                 height,
-                x: (display.rect.left - min_x) as f32 + width / 2.0,
-                y: (display.rect.top - min_y) as f32 + height / 2.0,
+                x: (display.rect.left - min_x + primary_offset.0) as f32 + width / 2.0,
+                y: (display.rect.top - min_y + primary_offset.1) as f32 + height / 2.0,
                 detected: true,
                 primary: display.primary,
             }
@@ -710,11 +824,7 @@ fn query_backend(
     automatic_mapping_attempted: &mut bool,
     driver_settings: &mut Option<Value>,
 ) -> io::Result<BackendSnapshot> {
-    let tablets = if detect {
-        client.call("DetectTablets", json!([]))?
-    } else {
-        client.call("GetTablets", json!([]))?
-    };
+    let tablets = query_tablets(client, detect, cfg!(target_os = "windows"), driver_settings)?;
     let Some((device_name, tablet)) = tablet_from_result(&tablets) else {
         return Ok(BackendSnapshot {
             state: "no-tablet",
@@ -790,7 +900,8 @@ fn query_backend(
     // Automatic display mapping may write settings only once after a tablet
     // configuration becomes available. Event retries must not recreate the
     // driver's output pipeline while the pen is already active.
-    if snapshot.pen_data_available && !*automatic_mapping_attempted {
+    if !cfg!(target_os = "windows") && snapshot.pen_data_available && !*automatic_mapping_attempted
+    {
         *automatic_mapping_attempted = true;
         if let Some(display) = displays
             .iter()
@@ -966,10 +1077,14 @@ fn apply_area(
             }
         };
         let Some(profile) = settings_for_tablet(&readback, &tablet_name) else {
-            eprintln!("apply_area: readback attempt {attempt} found no profile for '{tablet_name}'");
+            eprintln!(
+                "apply_area: readback attempt {attempt} found no profile for '{tablet_name}'"
+            );
             continue;
         };
-        let Some(area) = json_member(&profile, "AbsoluteModeSettings").and_then(|absolute| json_member(absolute, "Tablet")) else {
+        let Some(area) = json_member(&profile, "AbsoluteModeSettings")
+            .and_then(|absolute| json_member(absolute, "Tablet"))
+        else {
             continue;
         };
         let matches = requested_area.iter().all(|(name, expected)| {
@@ -980,13 +1095,24 @@ fn apply_area(
         if matches {
             eprintln!("apply_area: readback confirmed on attempt {attempt}");
             *settings = readback;
+            #[cfg(target_os = "windows")]
+            windows_runtime::persist_driver_settings(settings)?;
             return Ok(());
         }
         eprintln!("apply_area: readback attempt {attempt} does not match requested area yet");
     }
 
-    eprintln!("apply_area: readback did not confirm requested area within timeout, echoing requested values anyway");
-    Ok(())
+    #[cfg(target_os = "windows")]
+    return Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "OpenTabletDriver did not confirm the requested area",
+    ));
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        eprintln!("apply_area: readback did not confirm requested area within timeout, echoing requested values anyway");
+        Ok(())
+    }
 }
 
 fn publish_backend_snapshot(ui: &MainWindow, snapshot: BackendSnapshot) {
@@ -1048,6 +1174,17 @@ fn start_backend_worker(
     command_sender
 }
 
+#[cfg(target_os = "windows")]
+fn backend_worker(
+    ui: slint::Weak<MainWindow>,
+    command_receiver: Receiver<BackendCommand>,
+    backend_events: Sender<BackendCommand>,
+    displays: Vec<DisplayInfo>,
+) {
+    windows_backend::run(ui, command_receiver, backend_events, displays);
+}
+
+#[cfg(not(target_os = "windows"))]
 fn backend_worker(
     ui: slint::Weak<MainWindow>,
     command_receiver: Receiver<BackendCommand>,
@@ -1110,7 +1247,9 @@ fn backend_worker(
                     if let Some(connection) = client.as_mut() {
                         let applied = command.clone();
                         if driver_settings.is_none() {
-                            eprintln!("apply_area: driver settings cache empty, fetching before apply");
+                            eprintln!(
+                                "apply_area: driver settings cache empty, fetching before apply"
+                            );
                             match connection.call("GetSettings", json!([])) {
                                 Ok(settings) => driver_settings = Some(settings),
                                 Err(error) => {
@@ -1318,7 +1457,9 @@ impl Default for Settings {
             reduce_animations: false,
             start_with_system: false,
             start_minimized: false,
-            close_to_tray: false,
+            // On Windows closing the configuration window must not stop tablet
+            // input. Keep the supervisor alive in the tray by default.
+            close_to_tray: cfg!(target_os = "windows"),
             check_updates: true,
             pause_hidden: true,
             disable_unfocused_animations: false,
@@ -1472,6 +1613,22 @@ fn load_settings() -> Settings {
     settings
 }
 
+#[cfg(target_os = "windows")]
+fn replace_settings_file(
+    temporary_path: &std::path::Path,
+    path: &std::path::Path,
+) -> io::Result<()> {
+    windows_runtime::replace_file(temporary_path, path)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn replace_settings_file(
+    temporary_path: &std::path::Path,
+    path: &std::path::Path,
+) -> io::Result<()> {
+    fs::rename(temporary_path, path)
+}
+
 fn save_settings(ui: &MainWindow) -> io::Result<()> {
     let Some(path) = settings_path() else {
         return Ok(());
@@ -1507,7 +1664,7 @@ fn save_settings(ui: &MainWindow) -> io::Result<()> {
 
     let temporary_path = path.with_extension("tmp");
     fs::write(&temporary_path, contents)?;
-    fs::rename(temporary_path, path)
+    replace_settings_file(&temporary_path, &path)
 }
 
 fn apply_settings(ui: &MainWindow, settings: &Settings) {
@@ -1557,8 +1714,11 @@ fn apply_settings(ui: &MainWindow, settings: &Settings) {
 
 #[allow(unreachable_code, unused_variables)]
 fn configure_autostart(enabled: bool, start_minimized: bool) -> io::Result<()> {
+    #[cfg(not(target_os = "windows"))]
     let executable = std::env::current_exe()?;
+    #[cfg(not(target_os = "windows"))]
     let executable = executable.to_string_lossy();
+    #[cfg(not(target_os = "windows"))]
     let minimized_argument = if start_minimized {
         " --start-minimized"
     } else {
@@ -1627,26 +1787,7 @@ fn configure_autostart(enabled: bool, start_minimized: bool) -> io::Result<()> {
 
     #[cfg(target_os = "windows")]
     {
-        let Some(app_data) = std::env::var_os("APPDATA") else {
-            return Ok(());
-        };
-        let path = PathBuf::from(app_data)
-            .join("Microsoft/Windows/Start Menu/Programs/Startup/TabletFlow.cmd");
-        if !enabled {
-            if path.exists() {
-                fs::remove_file(path)?;
-            }
-            return Ok(());
-        }
-        let Some(parent) = path.parent() else {
-            return Ok(());
-        };
-        fs::create_dir_all(parent)?;
-        fs::write(
-            path,
-            format!("@start \"\" \"{}\"{}\n", executable, minimized_argument),
-        )?;
-        return Ok(());
+        return windows_runtime::configure_autostart(enabled, start_minimized);
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -1696,10 +1837,12 @@ fn current_uid() -> String {
         .unwrap_or_else(|| "0".into())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn daemon_process() -> &'static Mutex<Option<Child>> {
     EMBEDDED_DAEMON.get_or_init(|| Mutex::new(None))
 }
 
+#[cfg(not(target_os = "windows"))]
 fn daemon_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
@@ -1751,12 +1894,14 @@ fn daemon_candidates() -> Vec<PathBuf> {
     candidates
 }
 
+#[cfg(not(target_os = "windows"))]
 fn embedded_daemon_path() -> Option<PathBuf> {
     daemon_candidates()
         .into_iter()
         .find(|candidate| candidate.is_file())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn find_pids_for_path(path: &PathBuf) -> Vec<u32> {
     let path_str = path.to_string_lossy();
 
@@ -1793,6 +1938,7 @@ fn find_pids_for_path(path: &PathBuf) -> Vec<u32> {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn kill_pid(pid: u32) {
     #[cfg(target_os = "windows")]
     {
@@ -1806,6 +1952,7 @@ fn kill_pid(pid: u32) {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn kill_orphaned_daemons(path: &PathBuf) {
     let pids = find_pids_for_path(path);
     if pids.is_empty() {
@@ -1817,6 +1964,7 @@ fn kill_orphaned_daemons(path: &PathBuf) {
     thread::sleep(Duration::from_millis(200));
 }
 
+#[cfg(not(target_os = "windows"))]
 fn owned_daemon_is_running() -> bool {
     let Ok(mut daemon) = daemon_process().lock() else {
         return false;
@@ -1834,6 +1982,7 @@ fn owned_daemon_is_running() -> bool {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn daemon_is_running() -> bool {
     if owned_daemon_is_running() {
         return true;
@@ -1860,6 +2009,11 @@ fn daemon_is_running() -> bool {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn daemon_is_running() -> bool {
+    windows_runtime::daemon_is_running()
+}
+
 fn backend_state() -> &'static str {
     if daemon_is_running() {
         "daemon-running"
@@ -1868,6 +2022,7 @@ fn backend_state() -> &'static str {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn start_daemon() -> bool {
     if owned_daemon_is_running() {
         return true;
@@ -1905,6 +2060,18 @@ fn start_daemon() -> bool {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn start_daemon() -> bool {
+    match windows_runtime::start_daemon() {
+        Ok(_) => true,
+        Err(error) => {
+            windows_runtime::log_line(format!("driver launch failed: {error}"));
+            false
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
 fn stop_daemon() {
     let Ok(mut daemon) = daemon_process().lock() else {
         return;
@@ -1914,6 +2081,11 @@ fn stop_daemon() {
     };
     let _ = child.kill();
     let _ = child.wait();
+}
+
+#[cfg(target_os = "windows")]
+fn stop_daemon() {
+    windows_runtime::stop_daemon();
 }
 
 #[cfg(target_os = "macos")]
@@ -1971,13 +2143,29 @@ fn open_github() {
     let _ = Command::new("open").arg(URL).spawn();
 
     #[cfg(target_os = "windows")]
-    let _ = Command::new("cmd").args(["/C", "start", "", URL]).spawn();
+    let _ = windows_runtime::open_url(URL);
 
     #[cfg(all(unix, not(target_os = "macos")))]
     let _ = Command::new("xdg-open").arg(URL).spawn();
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    #[cfg(target_os = "windows")]
+    windows_runtime::initialize_process();
+
+    #[cfg(target_os = "windows")]
+    if std::env::args().any(|argument| argument == "--windows-driver-self-test") {
+        return match windows_runtime::run_self_test() {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                eprintln!("Windows driver self-test failed: {error}");
+                Err(slint::PlatformError::Other(format!(
+                    "Windows driver self-test failed: {error}"
+                )))
+            }
+        };
+    }
+
     let Some(_instance_guard) = acquire_instance_guard() else {
         return Ok(());
     };
