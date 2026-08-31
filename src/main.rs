@@ -1,7 +1,11 @@
 #![windows_subsystem = "windows"]
 
-#[cfg(target_os = "windows")]
-mod windows_backend;
+mod backend;
+mod display;
+mod platform;
+mod settings;
+#[cfg(unix)]
+mod unix_runtime;
 #[cfg(target_os = "windows")]
 mod windows_runtime;
 
@@ -9,50 +13,33 @@ slint::include_modules!();
 
 use serde_json::{json, Value};
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecModel};
-#[cfg(target_os = "windows")]
-use std::ffi::c_void;
-use std::fs;
 use std::io::{self, Read, Write};
-#[cfg(not(target_os = "windows"))]
-use std::net::TcpListener;
-use std::path::PathBuf;
-#[cfg(not(target_os = "windows"))]
-use std::process::Child;
-#[cfg(not(target_os = "windows"))]
-use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-#[cfg(target_os = "windows")]
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-#[cfg(not(target_os = "windows"))]
-use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
+use display::{enumerate_displays, selected_display_index, DisplayInfo};
+use platform::{
+    backend_state, configure_autostart, daemon_ipc_is_available, daemon_is_running,
+    macos_permissions, open_github, owned_daemon_is_running, request_macos_permissions,
+    run_driver_self_test, runtime_log, start_daemon, stop_daemon,
+};
+use settings::{apply_settings, load_settings, save_settings};
+
+#[cfg(unix)]
+use std::net::Shutdown;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
-#[cfg(not(target_os = "windows"))]
-static EMBEDDED_DAEMON: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
-#[cfg(not(target_os = "windows"))]
-const DAEMON_PIPE_NAME: &str = "OpenTabletDriver.Daemon";
 const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
-#[cfg(not(target_os = "windows"))]
-const INSTANCE_GUARD_PORT: u16 = 47219;
 
 #[cfg(not(target_os = "windows"))]
-fn acquire_instance_guard() -> Option<TcpListener> {
-    match TcpListener::bind(("127.0.0.1", INSTANCE_GUARD_PORT)) {
-        Ok(listener) => Some(listener),
-        Err(error) => {
-            eprintln!(
-                "TabletFlow is already running or its instance guard is unavailable: {error}"
-            );
-            None
-        }
-    }
+fn acquire_instance_guard() -> Option<unix_runtime::InstanceGuard> {
+    unix_runtime::acquire_instance_guard()
 }
 
 #[cfg(target_os = "windows")]
@@ -67,15 +54,14 @@ enum DaemonStream {
     Windows(std::fs::File),
 }
 
-/// Owns the Windows notification reader and makes dropping a client close the
-/// duplicated named-pipe handle instead of leaving a blocked thread behind.
-#[cfg(target_os = "windows")]
+/// Owns the notification reader and guarantees that dropping an IPC client
+/// also stops its blocking reader thread on every platform.
 struct ReaderGuard {
     cancelled: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
+    interrupter: Option<DaemonStream>,
 }
 
-#[cfg(target_os = "windows")]
 impl Drop for ReaderGuard {
     fn drop(&mut self) {
         let Some(reader) = self.thread.take() else {
@@ -83,11 +69,12 @@ impl Drop for ReaderGuard {
         };
 
         self.cancelled.store(true, Ordering::Release);
-        // A synchronous File::read can remain blocked while the daemon keeps
-        // the pipe open. CancelSynchronousIo wakes that exact reader thread;
-        // repeat until it observes the cancellation flag and exits to cover
-        // the small race between the flag check and ReadFile invocation.
+        #[cfg(target_os = "windows")]
         windows_runtime::cancel_reader(&reader);
+        #[cfg(unix)]
+        if let Some(DaemonStream::Unix(stream)) = self.interrupter.take() {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
         let _ = reader.join();
     }
 }
@@ -138,8 +125,7 @@ struct DaemonClient {
     stream: DaemonStream,
     responses: Receiver<Value>,
     next_id: u64,
-    #[cfg(target_os = "windows")]
-    _reader: Option<ReaderGuard>,
+    _reader: ReaderGuard,
 }
 
 impl DaemonClient {
@@ -148,25 +134,17 @@ impl DaemonClient {
         connection_generation: u64,
     ) -> io::Result<Self> {
         #[cfg(unix)]
-        let stream = {
-            let stream = UnixStream::connect(
-                std::env::temp_dir().join(format!("CoreFxPipe_{DAEMON_PIPE_NAME}")),
-            )?;
-            stream.set_write_timeout(Some(Duration::from_secs(15)))?;
-            DaemonStream::Unix(stream)
-        };
+        let stream = { DaemonStream::Unix(unix_runtime::connect_pipe()?) };
 
         #[cfg(windows)]
         let stream = DaemonStream::Windows(windows_runtime::connect_pipe()?);
 
         let mut reader = stream.try_clone()?;
+        let interrupter = reader.try_clone()?;
         let (response_sender, responses) = mpsc::channel();
-        #[cfg(target_os = "windows")]
         let cancelled = Arc::new(AtomicBool::new(false));
-        #[cfg(target_os = "windows")]
         let reader_cancelled = Arc::clone(&cancelled);
         let reader_thread = thread::spawn(move || loop {
-            #[cfg(target_os = "windows")]
             if reader_cancelled.load(Ordering::Acquire) {
                 break;
             }
@@ -191,7 +169,6 @@ impl DaemonClient {
                     }
                 }
                 Err(error) => {
-                    #[cfg(target_os = "windows")]
                     if reader_cancelled.load(Ordering::Acquire) {
                         break;
                     }
@@ -203,18 +180,16 @@ impl DaemonClient {
                 }
             }
         });
-        #[cfg(not(target_os = "windows"))]
-        drop(reader_thread);
 
         Ok(Self {
             stream,
             responses,
             next_id: 1,
-            #[cfg(target_os = "windows")]
-            _reader: Some(ReaderGuard {
+            _reader: ReaderGuard {
                 cancelled,
                 thread: Some(reader_thread),
-            }),
+                interrupter: Some(interrupter),
+            },
         })
     }
 
@@ -357,33 +332,6 @@ struct BackendSnapshot {
     pen_data_available: bool,
 }
 
-#[derive(Clone, Debug)]
-struct DisplayInfo {
-    index: i32,
-    label: String,
-    width: f32,
-    height: f32,
-    x: f32,
-    y: f32,
-    detected: bool,
-    primary: bool,
-}
-
-impl DisplayInfo {
-    fn fallback() -> Self {
-        Self {
-            index: 0,
-            label: "Primary display · 1920 × 1080".into(),
-            width: 1920.0,
-            height: 1080.0,
-            x: 960.0,
-            y: 540.0,
-            detected: false,
-            primary: true,
-        }
-    }
-}
-
 #[derive(Clone)]
 enum BackendCommand {
     Detect,
@@ -404,344 +352,6 @@ enum BackendCommand {
         frequency: String,
         display: Option<DisplayInfo>,
     },
-}
-
-fn display_label(index: usize, width: f32, height: f32) -> String {
-    format!("Display {} · {:.0} × {:.0}", index + 1, width, height)
-}
-
-#[cfg(target_os = "macos")]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct MacPoint {
-    x: f64,
-    y: f64,
-}
-
-#[cfg(target_os = "macos")]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct MacSize {
-    width: f64,
-    height: f64,
-}
-
-#[cfg(target_os = "macos")]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct MacRect {
-    origin: MacPoint,
-    size: MacSize,
-}
-
-#[cfg(target_os = "macos")]
-#[link(name = "CoreGraphics", kind = "framework")]
-extern "C" {
-    fn CGGetActiveDisplayList(
-        max_displays: u32,
-        active_displays: *mut u32,
-        display_count: *mut u32,
-    ) -> i32;
-    fn CGDisplayBounds(display: u32) -> MacRect;
-    fn CGMainDisplayID() -> u32;
-}
-
-#[cfg(target_os = "macos")]
-fn enumerate_macos_displays() -> Vec<DisplayInfo> {
-    let mut ids = [0u32; 16];
-    let mut count = 0u32;
-    let result = unsafe { CGGetActiveDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count) };
-    if result != 0 || count == 0 {
-        return vec![DisplayInfo::fallback()];
-    }
-
-    let primary_id = unsafe { CGMainDisplayID() };
-    let bounds = ids[..count.min(ids.len() as u32) as usize]
-        .iter()
-        .map(|id| (*id, unsafe { CGDisplayBounds(*id) }))
-        .collect::<Vec<_>>();
-    let min_x = bounds
-        .iter()
-        .map(|(_, rect)| rect.origin.x)
-        .fold(f64::INFINITY, f64::min);
-    let min_y = bounds
-        .iter()
-        .map(|(_, rect)| rect.origin.y)
-        .fold(f64::INFINITY, f64::min);
-
-    bounds
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, (id, rect))| {
-            let width = rect.size.width as f32;
-            let height = rect.size.height as f32;
-            (width > 0.0 && height > 0.0).then(|| DisplayInfo {
-                index: index as i32,
-                label: if id == primary_id {
-                    format!("Primary display · {:.0} × {:.0}", width, height)
-                } else {
-                    display_label(index, width, height)
-                },
-                width,
-                height,
-                x: (rect.origin.x - min_x) as f32 + width / 2.0,
-                y: (rect.origin.y - min_y) as f32 + height / 2.0,
-                detected: true,
-                primary: id == primary_id,
-            })
-        })
-        .collect()
-}
-
-#[cfg(target_os = "linux")]
-fn enumerate_linux_displays() -> Vec<DisplayInfo> {
-    let Ok(output) = Command::new("xrandr").arg("--query").output() else {
-        return vec![DisplayInfo::fallback()];
-    };
-    if !output.status.success() {
-        return vec![DisplayInfo::fallback()];
-    }
-
-    let mut displays = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        if !line.contains(" connected") {
-            continue;
-        }
-        let Some(geometry) = line.split_whitespace().find(|part| {
-            let Some(size_end) = part.find(|character: char| character == '+' || character == '-')
-            else {
-                return false;
-            };
-            part[..size_end].contains('x')
-                && part[size_end + 1..]
-                    .find(|character: char| character == '+' || character == '-')
-                    .is_some()
-        }) else {
-            continue;
-        };
-        let Some(size_end) = geometry.find(|character: char| character == '+' || character == '-')
-        else {
-            continue;
-        };
-        let Some(separator) = geometry[size_end + 1..]
-            .find(|character: char| character == '+' || character == '-')
-            .map(|offset| size_end + 1 + offset)
-        else {
-            continue;
-        };
-        let Some((width, height)) =
-            geometry[..size_end]
-                .split_once('x')
-                .and_then(|(width, height)| {
-                    Some((width.parse::<f32>().ok()?, height.parse::<f32>().ok()?))
-                })
-        else {
-            continue;
-        };
-        let Ok(x) = geometry[size_end..separator].parse::<f32>() else {
-            continue;
-        };
-        let Ok(y) = geometry[separator..].parse::<f32>() else {
-            continue;
-        };
-        displays.push((
-            width,
-            height,
-            x,
-            y,
-            line.split_whitespace().any(|part| part == "primary"),
-        ));
-    }
-
-    if displays.is_empty() {
-        return vec![DisplayInfo::fallback()];
-    }
-    let min_x = displays
-        .iter()
-        .map(|display| display.2)
-        .fold(f32::INFINITY, f32::min);
-    let min_y = displays
-        .iter()
-        .map(|display| display.3)
-        .fold(f32::INFINITY, f32::min);
-    displays
-        .into_iter()
-        .enumerate()
-        .map(|(index, (width, height, x, y, primary))| DisplayInfo {
-            index: index as i32,
-            label: if primary {
-                format!("Primary display · {:.0} × {:.0}", width, height)
-            } else {
-                display_label(index, width, height)
-            },
-            width,
-            height,
-            x: x - min_x + width / 2.0,
-            y: y - min_y + height / 2.0,
-            detected: true,
-            primary,
-        })
-        .collect()
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-struct WindowsRect {
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct WindowsMonitorInfo {
-    size: u32,
-    monitor: WindowsRect,
-    work: WindowsRect,
-    flags: u32,
-}
-
-#[cfg(target_os = "windows")]
-struct WindowsDisplayBounds {
-    rect: WindowsRect,
-    primary: bool,
-}
-
-#[cfg(target_os = "windows")]
-#[link(name = "user32")]
-extern "system" {
-    fn EnumDisplayMonitors(
-        device_context: *mut c_void,
-        clip: *const WindowsRect,
-        callback: Option<unsafe extern "system" fn(isize, isize, *mut WindowsRect, isize) -> i32>,
-        data: isize,
-    ) -> i32;
-    fn GetMonitorInfoW(monitor: isize, info: *mut WindowsMonitorInfo) -> i32;
-}
-
-#[cfg(target_os = "windows")]
-unsafe extern "system" fn collect_windows_display(
-    monitor: isize,
-    _: isize,
-    _: *mut WindowsRect,
-    data: isize,
-) -> i32 {
-    let mut info = WindowsMonitorInfo {
-        size: std::mem::size_of::<WindowsMonitorInfo>() as u32,
-        monitor: WindowsRect::default(),
-        work: WindowsRect::default(),
-        flags: 0,
-    };
-    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
-        return 1;
-    }
-
-    let width = info.monitor.right - info.monitor.left;
-    let height = info.monitor.bottom - info.monitor.top;
-    if width > 0 && height > 0 {
-        let displays = unsafe { &mut *(data as *mut Vec<WindowsDisplayBounds>) };
-        displays.push(WindowsDisplayBounds {
-            rect: info.monitor,
-            primary: info.flags & 1 != 0,
-        });
-    }
-    1
-}
-
-#[cfg(target_os = "windows")]
-fn enumerate_windows_displays() -> Vec<DisplayInfo> {
-    windows_runtime::initialize_process();
-    let mut bounds = Vec::new();
-    let result = unsafe {
-        EnumDisplayMonitors(
-            std::ptr::null_mut(),
-            std::ptr::null(),
-            Some(collect_windows_display),
-            (&mut bounds as *mut Vec<WindowsDisplayBounds>) as isize,
-        )
-    };
-    if result == 0 || bounds.is_empty() {
-        return vec![DisplayInfo::fallback()];
-    }
-
-    let min_x = bounds
-        .iter()
-        .map(|display: &WindowsDisplayBounds| display.rect.left)
-        .min()
-        .unwrap_or(0);
-    let min_y = bounds
-        .iter()
-        .map(|display: &WindowsDisplayBounds| display.rect.top)
-        .min()
-        .unwrap_or(0);
-    let primary_offset = bounds
-        .iter()
-        .find(|display| display.primary)
-        .map(|display| (display.rect.left - min_x, display.rect.top - min_y))
-        .unwrap_or((0, 0));
-    bounds
-        .into_iter()
-        .enumerate()
-        .map(|(index, display): (usize, WindowsDisplayBounds)| {
-            let width = (display.rect.right - display.rect.left) as f32;
-            let height = (display.rect.bottom - display.rect.top) as f32;
-            DisplayInfo {
-                index: index as i32,
-                label: if display.primary {
-                    format!("Primary display · {:.0} × {:.0}", width, height)
-                } else {
-                    display_label(index, width, height)
-                },
-                width,
-                height,
-                x: (display.rect.left - min_x + primary_offset.0) as f32 + width / 2.0,
-                y: (display.rect.top - min_y + primary_offset.1) as f32 + height / 2.0,
-                detected: true,
-                primary: display.primary,
-            }
-        })
-        .collect()
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-fn enumerate_displays() -> Vec<DisplayInfo> {
-    vec![DisplayInfo::fallback()]
-}
-
-#[cfg(target_os = "macos")]
-fn enumerate_displays() -> Vec<DisplayInfo> {
-    enumerate_macos_displays()
-}
-
-#[cfg(target_os = "linux")]
-fn enumerate_displays() -> Vec<DisplayInfo> {
-    enumerate_linux_displays()
-}
-
-#[cfg(target_os = "windows")]
-fn enumerate_displays() -> Vec<DisplayInfo> {
-    enumerate_windows_displays()
-}
-
-fn selected_display_index(
-    displays: &[DisplayInfo],
-    width: f32,
-    height: f32,
-    x: f32,
-    y: f32,
-) -> i32 {
-    displays
-        .iter()
-        .find(|display| {
-            (display.width - width).abs() < 2.0
-                && (display.height - height).abs() < 2.0
-                && (display.x - x).abs() < 3.0
-                && (display.y - y).abs() < 3.0
-        })
-        .map(|display| display.index)
-        .unwrap_or(-1)
 }
 
 fn json_member<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
@@ -1171,998 +781,28 @@ fn start_backend_worker(
     let (command_sender, command_receiver) = mpsc::channel();
     let backend_events = command_sender.clone();
     thread::spawn(move || {
-        backend_worker(ui, command_receiver, backend_events, displays);
+        backend::run(ui, command_receiver, backend_events, displays);
     });
     command_sender
-}
-
-#[cfg(target_os = "windows")]
-fn backend_worker(
-    ui: slint::Weak<MainWindow>,
-    command_receiver: Receiver<BackendCommand>,
-    backend_events: Sender<BackendCommand>,
-    displays: Vec<DisplayInfo>,
-) {
-    windows_backend::run(ui, command_receiver, backend_events, displays);
-}
-
-#[cfg(not(target_os = "windows"))]
-fn backend_worker(
-    ui: slint::Weak<MainWindow>,
-    command_receiver: Receiver<BackendCommand>,
-    backend_events: Sender<BackendCommand>,
-    displays: Vec<DisplayInfo>,
-) {
-    let mut client: Option<DaemonClient> = None;
-    let mut detect_requested = false;
-    let mut refresh_requested = true;
-    let mut automatic_mapping_attempted = false;
-    let mut driver_settings = None;
-    let mut pending_command = None;
-    let mut connect_requested = true;
-    let mut active_generation = 0;
-    let mut next_generation = 1;
-    let mut last_ipc_error = String::new();
-    #[cfg(debug_assertions)]
-    let mut last_backend_status = String::new();
-
-    loop {
-        for command in pending_command
-            .take()
-            .into_iter()
-            .chain(command_receiver.try_iter())
-        {
-            match command {
-                BackendCommand::Detect => {
-                    detect_requested = true;
-                    refresh_requested = true;
-                    automatic_mapping_attempted = false;
-                    driver_settings = None;
-                    connect_requested = true;
-                }
-                BackendCommand::TabletChanged { generation } if generation == active_generation => {
-                    refresh_requested = true;
-                    automatic_mapping_attempted = false;
-                    driver_settings = None;
-                }
-                BackendCommand::DriverDisconnected { generation, reason }
-                    if generation == active_generation =>
-                {
-                    eprintln!("OpenTabletDriver connection closed: {reason}");
-                    client = None;
-                    connect_requested = false;
-                    refresh_requested = true;
-                    automatic_mapping_attempted = false;
-                    driver_settings = None;
-                    let weak_ui = ui.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(ui) = weak_ui.upgrade() {
-                            ui.set_backend_state("daemon-crashed".into());
-                            ui.set_device_name("".into());
-                            ui.set_pen_data_available(false);
-                        }
-                    });
-                }
-                BackendCommand::TabletChanged { .. }
-                | BackendCommand::DriverDisconnected { .. } => {}
-                command @ BackendCommand::ApplyArea { .. } => {
-                    if let Some(connection) = client.as_mut() {
-                        let applied = command.clone();
-                        if driver_settings.is_none() {
-                            eprintln!(
-                                "apply_area: driver settings cache empty, fetching before apply"
-                            );
-                            match connection.call("GetSettings", json!([])) {
-                                Ok(settings) => driver_settings = Some(settings),
-                                Err(error) => {
-                                    eprintln!("apply_area: failed to fetch settings: {error}");
-                                }
-                            }
-                        }
-                        let result = driver_settings
-                            .as_mut()
-                            .ok_or_else(|| {
-                                io::Error::new(
-                                    io::ErrorKind::NotConnected,
-                                    "Driver settings are not loaded",
-                                )
-                            })
-                            .and_then(|settings| apply_area(connection, settings, command));
-                        if let Err(error) = result {
-                            eprintln!("OpenTabletDriver settings update failed: {error}");
-                            client = None;
-                            connect_requested = false;
-                            let weak_ui = ui.clone();
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = weak_ui.upgrade() {
-                                    ui.set_backend_state("daemon-crashed".into());
-                                    ui.set_device_name("".into());
-                                    ui.set_pen_data_available(false);
-                                }
-                            });
-                        } else {
-                            let weak_ui = ui.clone();
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = weak_ui.upgrade() {
-                                    publish_applied_area(&ui, applied);
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        if client.is_none() {
-            if !connect_requested {
-                let Ok(command) = command_receiver.recv() else {
-                    break;
-                };
-                pending_command = Some(command);
-                continue;
-            }
-
-            if !daemon_is_running() {
-                connect_requested = false;
-                detect_requested = false;
-                refresh_requested = true;
-                automatic_mapping_attempted = false;
-                driver_settings = None;
-                last_ipc_error.clear();
-                let weak_ui = ui.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(ui) = weak_ui.upgrade() {
-                        ui.set_backend_state("daemon-not-running".into());
-                        ui.set_device_name("".into());
-                        ui.set_pen_data_available(false);
-                    }
-                });
-                let Ok(command) = command_receiver.recv() else {
-                    break;
-                };
-                pending_command = Some(command);
-                continue;
-            }
-
-            let generation = next_generation;
-            match DaemonClient::connect(backend_events.clone(), generation) {
-                Ok(connection) => {
-                    client = Some(connection);
-                    active_generation = generation;
-                    next_generation += 1;
-                    refresh_requested = true;
-                    driver_settings = None;
-                    last_ipc_error.clear();
-                }
-                Err(error) => {
-                    let message = error.to_string();
-                    if message != last_ipc_error {
-                        eprintln!("OpenTabletDriver IPC connection failed: {message}");
-                        last_ipc_error = message;
-                    }
-                    let weak_ui = ui.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(ui) = weak_ui.upgrade() {
-                            ui.set_backend_state("daemon-running".into());
-                        }
-                    });
-                    pending_command = command_receiver
-                        .recv_timeout(BACKEND_RECONNECT_INTERVAL)
-                        .ok();
-                    continue;
-                }
-            }
-        }
-
-        let detect = std::mem::take(&mut detect_requested);
-        let refresh = std::mem::take(&mut refresh_requested);
-        let result = (detect || refresh).then(|| {
-            client.as_mut().map(|connection| {
-                query_backend(
-                    connection,
-                    detect,
-                    &displays,
-                    &mut automatic_mapping_attempted,
-                    &mut driver_settings,
-                )
-            })
-        });
-
-        if let Some(Some(Ok(snapshot))) = result {
-            last_ipc_error.clear();
-            #[cfg(debug_assertions)]
-            {
-                let status = format!("{}:{}", snapshot.state, snapshot.device_name);
-                if status != last_backend_status {
-                    eprintln!(
-                        "OpenTabletDriver backend: state={}, device={}",
-                        snapshot.state,
-                        if snapshot.device_name.is_empty() {
-                            "none"
-                        } else {
-                            &snapshot.device_name
-                        }
-                    );
-                    last_backend_status = status;
-                }
-            }
-            let weak_ui = ui.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(ui) = weak_ui.upgrade() {
-                    publish_backend_snapshot(&ui, snapshot);
-                }
-            });
-        } else if let Some(Some(Err(error))) = result {
-            let message = error.to_string();
-            if message != last_ipc_error {
-                eprintln!("OpenTabletDriver IPC request failed: {message}");
-                last_ipc_error = message;
-            }
-            client = None;
-            connect_requested = false;
-            refresh_requested = true;
-            driver_settings = None;
-            let weak_ui = ui.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(ui) = weak_ui.upgrade() {
-                    ui.set_backend_state("daemon-crashed".into());
-                    ui.set_device_name("".into());
-                    ui.set_pen_data_available(false);
-                }
-            });
-        }
-
-        let Ok(command) = command_receiver.recv() else {
-            break;
-        };
-        pending_command = Some(command);
-    }
-}
-
-#[derive(Clone, Debug)]
-struct Settings {
-    theme: String,
-    accent: String,
-    custom_colors: bool,
-    custom_background_hue: f32,
-    custom_background_saturation: f32,
-    custom_background_value: f32,
-    custom_accent_hue: f32,
-    custom_accent_saturation: f32,
-    custom_accent_value: f32,
-    compact_ui: bool,
-    reduce_animations: bool,
-    start_with_system: bool,
-    start_minimized: bool,
-    close_to_tray: bool,
-    check_updates: bool,
-    pause_hidden: bool,
-    disable_unfocused_animations: bool,
-    polling_interval: String,
-    low_power_mode: bool,
-    show_diagnostics: bool,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            theme: "System".into(),
-            accent: "Blue".into(),
-            custom_colors: false,
-            custom_background_hue: 212.0,
-            custom_background_saturation: 0.10,
-            custom_background_value: 0.96,
-            custom_accent_hue: 212.0,
-            custom_accent_saturation: 0.42,
-            custom_accent_value: 0.86,
-            compact_ui: false,
-            reduce_animations: false,
-            start_with_system: false,
-            start_minimized: false,
-            // On Windows closing the configuration window must not stop tablet
-            // input. Keep the supervisor alive in the tray by default.
-            close_to_tray: cfg!(target_os = "windows"),
-            check_updates: true,
-            pause_hidden: true,
-            disable_unfocused_animations: false,
-            polling_interval: "Auto".into(),
-            low_power_mode: false,
-            show_diagnostics: false,
-        }
-    }
-}
-
-fn parse_bool(value: &str, fallback: bool) -> bool {
-    match value {
-        "true" => true,
-        "false" => false,
-        _ => fallback,
-    }
-}
-
-fn parse_float(value: &str, fallback: f32, minimum: f32, maximum: f32) -> f32 {
-    value
-        .parse::<f32>()
-        .ok()
-        .filter(|value| value.is_finite())
-        .map(|value| value.clamp(minimum, maximum))
-        .unwrap_or(fallback)
-}
-
-fn user_home_directory() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var_os("USERPROFILE")
-            .or_else(|| std::env::var_os("HOME"))
-            .map(PathBuf::from)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
-}
-
-fn settings_path() -> Option<PathBuf> {
-    user_home_directory().map(|home| home.join(".tabletflow/settings.conf"))
-}
-
-fn legacy_settings_path() -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        user_home_directory()
-            .map(|home| home.join("Library/Application Support/TabletFlow/settings.conf"))
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .map(|app_data| app_data.join("TabletFlow/settings.conf"))
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        if let Some(config_home) = std::env::var_os("XDG_CONFIG_HOME") {
-            return Some(PathBuf::from(config_home).join("TabletFlow/settings.conf"));
-        }
-        user_home_directory().map(|home| home.join(".config/TabletFlow/settings.conf"))
-    }
-}
-
-fn load_settings() -> Settings {
-    let mut settings = Settings::default();
-    let Some(path) = settings_path() else {
-        return settings;
-    };
-
-    let contents = fs::read_to_string(&path).or_else(|_| {
-        legacy_settings_path()
-            .filter(|legacy_path| legacy_path != &path)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No legacy settings file"))
-            .and_then(fs::read_to_string)
-    });
-    let Ok(contents) = contents else {
-        return settings;
-    };
-
-    for line in contents.lines() {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        match key {
-            "theme" if matches!(value, "System" | "Light" | "Dark") => {
-                settings.theme = value.into()
-            }
-            "accent" if matches!(value, "Blue" | "Amber" | "Mint") => {
-                settings.accent = value.into()
-            }
-            "custom_colors" => settings.custom_colors = parse_bool(value, settings.custom_colors),
-            "custom_background_hue" => {
-                settings.custom_background_hue =
-                    parse_float(value, settings.custom_background_hue, 0.0, 360.0)
-            }
-            "custom_background_saturation" => {
-                settings.custom_background_saturation =
-                    parse_float(value, settings.custom_background_saturation, 0.0, 1.0)
-            }
-            "custom_background_value" => {
-                settings.custom_background_value =
-                    parse_float(value, settings.custom_background_value, 0.0, 1.0)
-            }
-            "custom_accent_hue" => {
-                settings.custom_accent_hue =
-                    parse_float(value, settings.custom_accent_hue, 0.0, 360.0)
-            }
-            "custom_accent_saturation" => {
-                settings.custom_accent_saturation =
-                    parse_float(value, settings.custom_accent_saturation, 0.0, 1.0)
-            }
-            "custom_accent_value" => {
-                settings.custom_accent_value =
-                    parse_float(value, settings.custom_accent_value, 0.0, 1.0)
-            }
-            "compact_ui" => settings.compact_ui = parse_bool(value, settings.compact_ui),
-            "reduce_animations" => {
-                settings.reduce_animations = parse_bool(value, settings.reduce_animations)
-            }
-            "start_with_system" => {
-                settings.start_with_system = parse_bool(value, settings.start_with_system)
-            }
-            "start_minimized" => {
-                settings.start_minimized = parse_bool(value, settings.start_minimized)
-            }
-            "close_to_tray" => settings.close_to_tray = parse_bool(value, settings.close_to_tray),
-            "check_updates" => settings.check_updates = parse_bool(value, settings.check_updates),
-            "pause_hidden" => settings.pause_hidden = parse_bool(value, settings.pause_hidden),
-            "disable_unfocused_animations" => {
-                settings.disable_unfocused_animations =
-                    parse_bool(value, settings.disable_unfocused_animations)
-            }
-            "polling_interval" if matches!(value, "Auto" | "Low" | "High") => {
-                settings.polling_interval = value.into()
-            }
-            "low_power_mode" => {
-                settings.low_power_mode = parse_bool(value, settings.low_power_mode)
-            }
-            "show_diagnostics" => {
-                settings.show_diagnostics = parse_bool(value, settings.show_diagnostics)
-            }
-            _ => {}
-        }
-    }
-
-    settings
-}
-
-#[cfg(target_os = "windows")]
-fn replace_settings_file(
-    temporary_path: &std::path::Path,
-    path: &std::path::Path,
-) -> io::Result<()> {
-    windows_runtime::replace_file(temporary_path, path)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn replace_settings_file(
-    temporary_path: &std::path::Path,
-    path: &std::path::Path,
-) -> io::Result<()> {
-    fs::rename(temporary_path, path)
-}
-
-fn save_settings(ui: &MainWindow) -> io::Result<()> {
-    let Some(path) = settings_path() else {
-        return Ok(());
-    };
-    let Some(parent) = path.parent() else {
-        return Ok(());
-    };
-    fs::create_dir_all(parent)?;
-
-    let contents = format!(
-        "theme={}\naccent={}\ncustom_colors={}\ncustom_background_hue={:.2}\ncustom_background_saturation={:.4}\ncustom_background_value={:.4}\ncustom_accent_hue={:.2}\ncustom_accent_saturation={:.4}\ncustom_accent_value={:.4}\ncompact_ui={}\nreduce_animations={}\nstart_with_system={}\nstart_minimized={}\nclose_to_tray={}\ncheck_updates={}\npause_hidden={}\ndisable_unfocused_animations={}\npolling_interval={}\nlow_power_mode={}\nshow_diagnostics={}\n",
-        ui.get_theme(),
-        ui.get_accent(),
-        ui.get_custom_colors(),
-        ui.get_custom_background_hue(),
-        ui.get_custom_background_saturation(),
-        ui.get_custom_background_value(),
-        ui.get_custom_accent_hue(),
-        ui.get_custom_accent_saturation(),
-        ui.get_custom_accent_value(),
-        ui.get_compact_ui(),
-        ui.get_reduce_animations(),
-        ui.get_start_with_system(),
-        ui.get_start_minimized(),
-        ui.get_close_to_tray(),
-        ui.get_check_updates(),
-        ui.get_pause_hidden(),
-        ui.get_disable_unfocused_animations(),
-        ui.get_polling_interval(),
-        ui.get_low_power_mode(),
-        ui.get_show_diagnostics(),
-    );
-
-    let temporary_path = path.with_extension("tmp");
-    fs::write(&temporary_path, contents)?;
-    replace_settings_file(&temporary_path, &path)
-}
-
-fn apply_settings(ui: &MainWindow, settings: &Settings) {
-    ui.set_theme(settings.theme.clone().into());
-    ui.set_accent(settings.accent.clone().into());
-    ui.set_custom_colors(settings.custom_colors);
-    ui.set_custom_background_hue(settings.custom_background_hue);
-    ui.set_custom_background_saturation(settings.custom_background_saturation);
-    ui.set_custom_background_value(settings.custom_background_value);
-    ui.set_custom_accent_hue(settings.custom_accent_hue);
-    ui.set_custom_accent_saturation(settings.custom_accent_saturation);
-    ui.set_custom_accent_value(settings.custom_accent_value);
-    ui.set_compact_ui(settings.compact_ui);
-    ui.set_reduce_animations(settings.reduce_animations);
-    ui.set_start_with_system(settings.start_with_system);
-    ui.set_start_minimized(settings.start_minimized);
-    ui.set_close_to_tray(settings.close_to_tray);
-    ui.set_check_updates(settings.check_updates);
-    ui.set_pause_hidden(settings.pause_hidden);
-    ui.set_disable_unfocused_animations(settings.disable_unfocused_animations);
-    ui.set_polling_interval(settings.polling_interval.clone().into());
-    ui.set_low_power_mode(settings.low_power_mode);
-    ui.set_show_diagnostics(settings.show_diagnostics);
-
-    let theme = ui.global::<AppTheme>();
-    theme.set_mode(
-        if settings.theme == "Light" {
-            "light"
-        } else if settings.theme == "Dark" {
-            "dark"
-        } else {
-            "system"
-        }
-        .into(),
-    );
-    theme.set_accent(settings.accent.clone().into());
-    theme.set_custom_colors(settings.custom_colors);
-    theme.set_custom_background_hue(settings.custom_background_hue);
-    theme.set_custom_background_saturation(settings.custom_background_saturation);
-    theme.set_custom_background_value(settings.custom_background_value);
-    theme.set_custom_accent_hue(settings.custom_accent_hue);
-    theme.set_custom_accent_saturation(settings.custom_accent_saturation);
-    theme.set_custom_accent_value(settings.custom_accent_value);
-    theme.set_compact(settings.compact_ui);
-    theme.set_reduce_motion(settings.reduce_animations);
-}
-
-#[allow(unreachable_code, unused_variables)]
-fn configure_autostart(enabled: bool, start_minimized: bool) -> io::Result<()> {
-    #[cfg(not(target_os = "windows"))]
-    let executable = std::env::current_exe()?;
-    #[cfg(not(target_os = "windows"))]
-    let executable = executable.to_string_lossy();
-    #[cfg(not(target_os = "windows"))]
-    let minimized_argument = if start_minimized {
-        " --start-minimized"
-    } else {
-        ""
-    };
-
-    #[cfg(target_os = "macos")]
-    {
-        let Some(home) = std::env::var_os("HOME") else {
-            return Ok(());
-        };
-        let path = PathBuf::from(home).join("Library/LaunchAgents/com.underweek.tabletflow.plist");
-        if !enabled {
-            let _ = Command::new("launchctl")
-                .args([
-                    "bootout",
-                    &format!("gui/{}", current_uid()),
-                    path.to_string_lossy().as_ref(),
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            if path.exists() {
-                fs::remove_file(path)?;
-            }
-            return Ok(());
-        }
-
-        let Some(parent) = path.parent() else {
-            return Ok(());
-        };
-        fs::create_dir_all(parent)?;
-        let escaped_executable = executable
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;");
-        let argument = if start_minimized {
-            "            <string>--start-minimized</string>\n"
-        } else {
-            ""
-        };
-        let plist = format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>\n<key>Label</key><string>com.underweek.tabletflow</string>\n<key>ProgramArguments</key><array>\n            <string>{escaped_executable}</string>\n{argument}</array>\n<key>RunAtLoad</key><true/>\n</dict></plist>\n"
-        );
-        fs::write(&path, plist)?;
-        let _ = Command::new("launchctl")
-            .args([
-                "bootout",
-                &format!("gui/{}", current_uid()),
-                path.to_string_lossy().as_ref(),
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        let _ = Command::new("launchctl")
-            .args([
-                "bootstrap",
-                &format!("gui/{}", current_uid()),
-                path.to_string_lossy().as_ref(),
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        return Ok(());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        return windows_runtime::configure_autostart(enabled, start_minimized);
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let config_home = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")));
-        let Some(config_home) = config_home else {
-            return Ok(());
-        };
-        let path = config_home.join("autostart/TabletFlow.desktop");
-        if !enabled {
-            if path.exists() {
-                fs::remove_file(path)?;
-            }
-            return Ok(());
-        }
-        let Some(parent) = path.parent() else {
-            return Ok(());
-        };
-        fs::create_dir_all(parent)?;
-        fs::write(
-            path,
-            format!(
-                "[Desktop Entry]\nType=Application\nName=TabletFlow\nExec=\"{}\"{}\nX-GNOME-Autostart-enabled=true\n",
-                executable, minimized_argument
-            ),
-        )?;
-    }
-
-    Ok(())
 }
 
 fn set_tray_visible(tray: &TrayIcon, visible: bool) {
     tray.set_shown(visible);
 }
 
-#[cfg(target_os = "macos")]
-fn current_uid() -> String {
-    Command::new("id")
-        .arg("-u")
-        .output()
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|uid| uid.trim().to_owned())
-        .filter(|uid| !uid.is_empty())
-        .unwrap_or_else(|| "0".into())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn daemon_process() -> &'static Mutex<Option<Child>> {
-    EMBEDDED_DAEMON.get_or_init(|| Mutex::new(None))
-}
-
-#[cfg(not(target_os = "windows"))]
-fn daemon_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    {
-        let runtime_id = match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("macos", "aarch64") => Some("osx-arm64"),
-            ("macos", "x86_64") => Some("osx-x64"),
-            ("windows", "aarch64") => Some("win-arm64"),
-            ("windows", "x86_64") => Some("win-x64"),
-            ("windows", "x86") => Some("win-x86"),
-            ("linux", "aarch64") => Some("linux-arm64"),
-            ("linux", "x86_64") => Some("linux-x64"),
-            ("linux", "x86") => Some("linux-x86"),
-            _ => None,
-        };
-        if let Some(runtime_id) = runtime_id {
-            let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("target/otd")
-                .join(runtime_id);
-            candidates.push(directory.join("OpenTabletDriver.Daemon"));
-            candidates.push(directory.join("OpenTabletDriver.Daemon.exe"));
-            candidates.push(directory.join("OpenTabletDriver.Daemon.dll"));
-        }
-    }
-
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(directory) = executable.parent() {
-            candidates.push(directory.join("OpenTabletDriver.Daemon"));
-            candidates.push(directory.join("OpenTabletDriver.Daemon.exe"));
-            candidates.push(directory.join("OpenTabletDriver.Daemon.dll"));
-            candidates.push(directory.join("resources/OpenTabletDriver.Daemon"));
-            candidates.push(directory.join("resources/OpenTabletDriver.Daemon.exe"));
-            candidates.push(directory.join("resources/OpenTabletDriver.Daemon.dll"));
-
-            if let Some(contents) = directory.parent() {
-                candidates.push(contents.join("Resources/OpenTabletDriver.Daemon"));
-                candidates.push(contents.join("Resources/OpenTabletDriver.Daemon.dll"));
-            }
-        }
-    }
-
-    if let Some(resource_root) = std::env::var_os("TABLETFLOW_RESOURCE_DIR") {
-        let resource_root = PathBuf::from(resource_root);
-        candidates.push(resource_root.join("OpenTabletDriver.Daemon"));
-        candidates.push(resource_root.join("OpenTabletDriver.Daemon.exe"));
-        candidates.push(resource_root.join("OpenTabletDriver.Daemon.dll"));
-    }
-
-    candidates
-}
-
-#[cfg(not(target_os = "windows"))]
-fn embedded_daemon_path() -> Option<PathBuf> {
-    daemon_candidates()
-        .into_iter()
-        .find(|candidate| candidate.is_file())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn find_pids_for_path(path: &PathBuf) -> Vec<u32> {
-    let path_str = path.to_string_lossy();
-
-    #[cfg(target_os = "windows")]
-    {
-        let script = format!(
-            "Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -eq '{}' }} | Select-Object -ExpandProperty ProcessId",
-            path_str.replace('\'', "''")
-        );
-        return Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .output()
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .filter_map(|line| line.trim().parse::<u32>().ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Command::new("pgrep")
-            .args(["-f", &path_str])
-            .output()
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .filter_map(|line| line.trim().parse::<u32>().ok())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn kill_pid(pid: u32) {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = Command::new("taskkill")
-            .args(["/F", "/PID", &pid.to_string()])
-            .output();
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn kill_orphaned_daemons(path: &PathBuf) {
-    let pids = find_pids_for_path(path);
-    if pids.is_empty() {
-        return;
-    }
-    for pid in pids {
-        kill_pid(pid);
-    }
-    thread::sleep(Duration::from_millis(200));
-}
-
-#[cfg(not(target_os = "windows"))]
-fn owned_daemon_is_running() -> bool {
-    let Ok(mut daemon) = daemon_process().lock() else {
-        return false;
-    };
-    let Some(child) = daemon.as_mut() else {
-        return false;
-    };
-
-    match child.try_wait() {
-        Ok(None) => true,
-        Ok(Some(_)) | Err(_) => {
-            *daemon = None;
-            false
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn daemon_is_running() -> bool {
-    if owned_daemon_is_running() {
-        return true;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        return Command::new("tasklist")
-            .args(["/FI", "IMAGENAME eq OpenTabletDriver.Daemon.exe"])
-            .output()
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout).contains("OpenTabletDriver.Daemon")
-            })
-            .unwrap_or(false);
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Command::new("pgrep")
-            .args(["-f", "OpenTabletDriver.Daemon"])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn daemon_is_running() -> bool {
-    windows_runtime::daemon_is_running()
-}
-
-fn backend_state() -> &'static str {
-    if daemon_is_running() {
-        "daemon-running"
-    } else {
-        "daemon-not-running"
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn start_daemon() -> bool {
-    if owned_daemon_is_running() {
-        return true;
-    }
-
-    let Some(path) = embedded_daemon_path() else {
-        return false;
-    };
-
-    // Any process still running from this exact binary path is an orphan we
-    // lost our `Child` handle to (previous crash, force-quit, etc). It must
-    // be killed here, otherwise we'd never be able to stop it again.
-    kill_orphaned_daemons(&path);
-
-    let mut command = if path.extension().is_some_and(|extension| extension == "dll") {
-        let mut command = Command::new("dotnet");
-        command.arg(&path);
-        command
-    } else {
-        Command::new(&path)
-    };
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-
-    let Ok(child) = command.spawn() else {
-        return false;
-    };
-    if let Ok(mut daemon) = daemon_process().lock() {
-        *daemon = Some(child);
-        true
-    } else {
-        false
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn start_daemon() -> bool {
-    match windows_runtime::start_daemon() {
-        Ok(_) => true,
-        Err(error) => {
-            windows_runtime::log_line(format!("driver launch failed: {error}"));
-            false
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn stop_daemon() {
-    let Ok(mut daemon) = daemon_process().lock() else {
-        return;
-    };
-    let Some(mut child) = daemon.take() else {
-        return;
-    };
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(target_os = "windows")]
-fn stop_daemon() {
-    windows_runtime::stop_daemon();
-}
-
-#[cfg(target_os = "macos")]
-#[link(name = "ApplicationServices", kind = "framework")]
-extern "C" {
-    fn AXIsProcessTrusted() -> bool;
-}
-
-#[cfg(target_os = "macos")]
-#[link(name = "IOKit", kind = "framework")]
-extern "C" {
-    fn IOHIDCheckAccess(request_type: u32) -> u32;
-    fn IOHIDRequestAccess(request_type: u32) -> bool;
-}
-
-fn macos_permissions() -> (bool, bool) {
-    #[cfg(target_os = "macos")]
-    {
-        const IOHID_REQUEST_TYPE_LISTEN_EVENT: u32 = 1;
-        let input_monitoring = unsafe { IOHIDCheckAccess(IOHID_REQUEST_TYPE_LISTEN_EVENT) } == 0;
-        let accessibility = unsafe { AXIsProcessTrusted() };
-        (input_monitoring, accessibility)
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        (true, true)
-    }
-}
-
-fn request_macos_permissions() {
-    #[cfg(target_os = "macos")]
-    {
-        const IOHID_REQUEST_TYPE_LISTEN_EVENT: u32 = 1;
-        let (input_monitoring_granted, accessibility_granted) = macos_permissions();
-        if !input_monitoring_granted {
-            let _ = unsafe { IOHIDRequestAccess(IOHID_REQUEST_TYPE_LISTEN_EVENT) };
-            let _ = Command::new("open")
-                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
-                .spawn();
-        } else if !accessibility_granted {
-            let _ = Command::new("open")
-                .arg(
-                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-                )
-                .spawn();
-        }
-    }
-}
-
-fn open_github() {
-    const URL: &str = "https://github.com/UnderWeek/TabletFlow";
-
-    #[cfg(target_os = "macos")]
-    let _ = Command::new("open").arg(URL).spawn();
-
-    #[cfg(target_os = "windows")]
-    let _ = windows_runtime::open_url(URL);
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let _ = Command::new("xdg-open").arg(URL).spawn();
-}
-
 fn main() -> Result<(), slint::PlatformError> {
     #[cfg(target_os = "windows")]
     windows_runtime::initialize_process();
 
-    #[cfg(target_os = "windows")]
-    if std::env::args().any(|argument| argument == "--windows-driver-self-test") {
-        return match windows_runtime::run_self_test() {
+    if std::env::args().any(|argument| {
+        argument == "--driver-self-test" || argument == "--windows-driver-self-test"
+    }) {
+        return match run_driver_self_test() {
             Ok(()) => Ok(()),
             Err(error) => {
-                eprintln!("Windows driver self-test failed: {error}");
+                eprintln!("Driver self-test failed: {error}");
                 Err(slint::PlatformError::Other(format!(
-                    "Windows driver self-test failed: {error}"
+                    "Driver self-test failed: {error}"
                 )))
             }
         };

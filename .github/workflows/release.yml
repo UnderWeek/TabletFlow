@@ -66,6 +66,11 @@ jobs:
           daemon_path="$(./packaging/build-daemon.sh "${{ matrix.rid }}" build/otd)"
           echo "daemon_path=$daemon_path" >> "$GITHUB_OUTPUT"
 
+      - name: Smoke-test macOS driver
+        env:
+          TABLETFLOW_RESOURCE_DIR: ${{ github.workspace }}/build/otd
+        run: target/release/tabletflow --driver-self-test
+
       - name: Import code signing certificate
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
@@ -170,7 +175,7 @@ jobs:
           $tabletFlowPath = Join-Path $smokeDirectory "TabletFlow.exe"
           $processOptions = @{
             FilePath = $tabletFlowPath
-            ArgumentList = "--windows-driver-self-test"
+            ArgumentList = "--driver-self-test"
             WorkingDirectory = $smokeDirectory
             RedirectStandardOutput = $stdoutPath
             RedirectStandardError = $stderrPath
@@ -249,6 +254,11 @@ jobs:
           OTD_ROOT: ${{ github.workspace }}/opentabletdriver
           DOTNET_COMMAND: dotnet
         run: ./packaging/build-daemon.sh linux-x64 build/otd
+
+      - name: Smoke-test Linux driver
+        env:
+          TABLETFLOW_RESOURCE_DIR: ${{ github.workspace }}/build/otd
+        run: target/release/tabletflow --driver-self-test
 
       - name: Package Linux archive
         env:

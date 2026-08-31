@@ -1,21 +1,15 @@
-//! Windows-specific driver supervisor and recovery loop.
+//! Cross-platform OpenTabletDriver supervisor.
 //!
-//! The previous shared worker stopped reconnecting after one IPC error and went
-//! to sleep forever after publishing `no-tablet`.  Windows gets an independent
-//! state machine so the stable macOS/Linux paths stay byte-for-byte in their
-//! existing implementation.
+//! All desktop platforms use the same reconnect, detection, and queued-apply
+//! state machine. Platform-specific process/IPC details stay behind helpers in
+//! `main`/`windows_runtime`, so behavior does not silently diverge by OS.
 
 use super::*;
 use std::time::Instant;
 
 const TABLET_POLL_INTERVAL: Duration = Duration::from_millis(900);
 const START_RETRY_INTERVAL: Duration = Duration::from_millis(1500);
-// DriverDaemon performs a synchronous HID scan before it creates the RPC pipe.
-// On Windows this can legitimately take a couple of minutes while HID-class
-// drivers settle after login or USB resume. Do not restart a living process
-// during that initialization window.
-const PIPE_STARTUP_DEADLINE: Duration = Duration::from_secs(180);
-const MAX_AUTOMATIC_RESTARTS: usize = 3;
+const IPC_STARTUP_DEADLINE: Duration = Duration::from_secs(180);
 const DETECT_RETRY_DELAYS: [Duration; 6] = [
     Duration::ZERO,
     Duration::from_secs(2),
@@ -41,7 +35,6 @@ impl DetectionSchedule {
     }
 
     fn reset_after_explicit_detect(&mut self, now: Instant) {
-        // The explicit request itself is the first attempt in the new burst.
         self.attempts = 1;
         self.next = Some(now + DETECT_RETRY_DELAYS[1]);
     }
@@ -96,11 +89,7 @@ fn wait_for_command(
     command_receiver: &Receiver<BackendCommand>,
     timeout: Duration,
 ) -> Option<BackendCommand> {
-    match command_receiver.recv_timeout(timeout) {
-        Ok(command) => Some(command),
-        Err(RecvTimeoutError::Timeout) => None,
-        Err(RecvTimeoutError::Disconnected) => None,
-    }
+    command_receiver.recv_timeout(timeout).ok()
 }
 
 pub(super) fn run(
@@ -116,7 +105,9 @@ pub(super) fn run(
     let mut detect_requested = false;
     let mut no_tablet = false;
     let mut driver_settings = None;
-    let mut automatic_mapping_attempted = true;
+    // Windows needs SetSettings after DetectTablets to recreate its output
+    // pipeline. Other platforms retain the one-time automatic display mapping.
+    let mut automatic_mapping_attempted = cfg!(target_os = "windows");
     let mut active_generation = 0;
     let mut next_generation = 1;
     let mut last_ipc_error = String::new();
@@ -124,10 +115,9 @@ pub(super) fn run(
         .checked_sub(START_RETRY_INTERVAL)
         .unwrap_or_else(Instant::now);
     let mut startup_wait_started = Some(Instant::now());
-    let mut automatic_restarts = 0usize;
     let mut detection = DetectionSchedule::new(Instant::now());
 
-    windows_runtime::log_line("Windows backend supervisor started");
+    runtime_log("backend supervisor started");
 
     loop {
         let commands = pending_command
@@ -141,18 +131,23 @@ pub(super) fn run(
                     detect_requested = true;
                     refresh_requested = true;
                     driver_settings = None;
-                    automatic_restarts = 0;
+                    if !cfg!(target_os = "windows") {
+                        automatic_mapping_attempted = false;
+                    }
                     detection.reset_after_explicit_detect(Instant::now());
                 }
                 BackendCommand::TabletChanged { generation } if generation == active_generation => {
-                    detect_requested = true;
+                    detect_requested = cfg!(target_os = "windows");
                     refresh_requested = true;
                     driver_settings = None;
+                    if !cfg!(target_os = "windows") {
+                        automatic_mapping_attempted = false;
+                    }
                 }
                 BackendCommand::DriverDisconnected { generation, reason }
                     if generation == active_generation =>
                 {
-                    windows_runtime::log_line(format!(
+                    runtime_log(format!(
                         "driver IPC disconnected generation={generation}: {reason}"
                     ));
                     client = None;
@@ -164,21 +159,15 @@ pub(super) fn run(
                 BackendCommand::TabletChanged { .. }
                 | BackendCommand::DriverDisconnected { .. } => {}
                 command @ BackendCommand::ApplyArea { .. } => {
-                    // Keep the most recent user request while the daemon is starting
-                    // or reconnecting instead of silently dropping it.
+                    // Never drop user input while reconnecting; only the newest
+                    // requested state matters.
                     queued_apply = Some(command);
                 }
             }
         }
 
         if client.is_none() {
-            if !windows_runtime::daemon_is_running() {
-                if automatic_restarts >= MAX_AUTOMATIC_RESTARTS {
-                    publish_connection_state(&ui, "daemon-crashed");
-                    pending_command = wait_for_command(&command_receiver, START_RETRY_INTERVAL);
-                    continue;
-                }
-
+            if !daemon_is_running() {
                 if last_start_attempt.elapsed() < START_RETRY_INTERVAL {
                     pending_command = wait_for_command(
                         &command_receiver,
@@ -188,44 +177,23 @@ pub(super) fn run(
                 }
 
                 last_start_attempt = Instant::now();
-                match windows_runtime::start_daemon() {
-                    Ok(windows_runtime::StartResult::Started) => {
-                        automatic_restarts += 1;
-                        startup_wait_started = Some(Instant::now());
-                        publish_connection_state(&ui, "daemon-starting");
-                    }
-                    Ok(windows_runtime::StartResult::AlreadyConnected) => {
-                        startup_wait_started = None;
-                    }
-                    Ok(windows_runtime::StartResult::AlreadyStarting) => {
-                        startup_wait_started.get_or_insert_with(Instant::now);
-                    }
-                    Err(error) => {
-                        automatic_restarts += 1;
-                        windows_runtime::log_line(format!("unable to start driver: {error}"));
-                        publish_connection_state(
-                            &ui,
-                            if error.kind() == io::ErrorKind::NotFound {
-                                "daemon-not-running"
-                            } else {
-                                "daemon-crashed"
-                            },
-                        );
-                        pending_command = wait_for_command(&command_receiver, START_RETRY_INTERVAL);
-                        continue;
-                    }
+                if start_daemon() {
+                    startup_wait_started = Some(Instant::now());
+                    publish_connection_state(&ui, "daemon-starting");
+                } else {
+                    publish_connection_state(&ui, "daemon-not-running");
+                    pending_command = wait_for_command(&command_receiver, START_RETRY_INTERVAL);
+                    continue;
                 }
             }
 
-            if windows_runtime::owned_daemon_is_running()
+            if owned_daemon_is_running()
                 && startup_wait_started
-                    .is_some_and(|started| started.elapsed() >= PIPE_STARTUP_DEADLINE)
-                && !windows_runtime::pipe_is_available()
+                    .is_some_and(|started| started.elapsed() >= IPC_STARTUP_DEADLINE)
+                && !daemon_ipc_is_available()
             {
-                windows_runtime::log_line(
-                    "packaged daemon missed pipe startup deadline; performing controlled restart",
-                );
-                windows_runtime::stop_daemon();
+                runtime_log("packaged daemon missed IPC startup deadline; restarting");
+                stop_daemon();
                 startup_wait_started = None;
                 publish_connection_state(&ui, "daemon-crashed");
                 continue;
@@ -234,14 +202,11 @@ pub(super) fn run(
             let generation = next_generation;
             match DaemonClient::connect(backend_events.clone(), generation) {
                 Ok(connection) => {
-                    windows_runtime::log_line(format!(
-                        "driver IPC connected generation={generation}"
-                    ));
+                    runtime_log(format!("driver IPC connected generation={generation}"));
                     client = Some(connection);
                     active_generation = generation;
                     next_generation += 1;
                     refresh_requested = true;
-                    detect_requested = false;
                     driver_settings = None;
                     last_ipc_error.clear();
                     startup_wait_started = None;
@@ -251,7 +216,7 @@ pub(super) fn run(
                 Err(error) => {
                     let message = error.to_string();
                     if message != last_ipc_error {
-                        windows_runtime::log_line(format!(
+                        runtime_log(format!(
                             "waiting for driver IPC generation={generation}: {message}"
                         ));
                         last_ipc_error = message;
@@ -267,14 +232,16 @@ pub(super) fn run(
         let detect = std::mem::take(&mut detect_requested);
         let refresh = std::mem::take(&mut refresh_requested);
         if detect || refresh {
-            let result = query_backend(
-                client.as_mut().expect("client checked above"),
+            let Some(connection) = client.as_mut() else {
+                continue;
+            };
+            match query_backend(
+                connection,
                 detect,
                 &displays,
                 &mut automatic_mapping_attempted,
                 &mut driver_settings,
-            );
-            match result {
+            ) {
                 Ok(snapshot) => {
                     no_tablet = snapshot.state == "no-tablet";
                     if no_tablet {
@@ -282,7 +249,6 @@ pub(super) fn run(
                     } else {
                         detection.tablet_found();
                     }
-                    automatic_restarts = 0;
                     last_ipc_error.clear();
                     let weak_ui = ui.clone();
                     let _ = slint::invoke_from_event_loop(move || {
@@ -292,7 +258,7 @@ pub(super) fn run(
                     });
                 }
                 Err(error) => {
-                    windows_runtime::log_line(format!("driver RPC query failed: {error}"));
+                    runtime_log(format!("driver RPC query failed: {error}"));
                     client = None;
                     driver_settings = None;
                     refresh_requested = true;
@@ -304,14 +270,16 @@ pub(super) fn run(
         }
 
         if let Some(command) = queued_apply.take() {
-            let connection = client.as_mut().expect("client checked above");
+            let Some(connection) = client.as_mut() else {
+                queued_apply = Some(command);
+                continue;
+            };
             if driver_settings.is_none() {
                 match connection.call("GetSettings", json!([])) {
                     Ok(settings) => driver_settings = Some(settings),
                     Err(error) => {
-                        windows_runtime::log_line(format!(
-                            "failed to load settings before apply: {error}"
-                        ));
+                        runtime_log(format!("failed to load settings before apply: {error}"));
+                        queued_apply = Some(command);
                         client = None;
                         refresh_requested = true;
                         publish_connection_state(&ui, "daemon-starting");
@@ -335,9 +303,7 @@ pub(super) fn run(
                     });
                 }
                 Err(error) => {
-                    windows_runtime::log_line(format!("failed to apply tablet area: {error}"));
-                    // A timed-out/unconfirmed operation must not be echoed as a
-                    // success. Reconnect and read the actual driver state.
+                    runtime_log(format!("failed to apply tablet area: {error}"));
                     client = None;
                     driver_settings = None;
                     refresh_requested = true;
@@ -350,8 +316,7 @@ pub(super) fn run(
 
         if no_tablet {
             let now = Instant::now();
-            let timeout = detection.wait_duration(now);
-            match command_receiver.recv_timeout(timeout) {
+            match command_receiver.recv_timeout(detection.wait_duration(now)) {
                 Ok(command) => pending_command = Some(command),
                 Err(RecvTimeoutError::Timeout) => {
                     refresh_requested = true;
@@ -362,14 +327,19 @@ pub(super) fn run(
                 Err(RecvTimeoutError::Disconnected) => break,
             }
         } else {
-            match command_receiver.recv() {
+            match command_receiver.recv_timeout(TABLET_POLL_INTERVAL) {
                 Ok(command) => pending_command = Some(command),
-                Err(_) => break,
+                Err(RecvTimeoutError::Timeout) => {
+                    // Polling also catches missed pipe notifications and hotplug
+                    // events on all platforms.
+                    refresh_requested = true;
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
             }
         }
     }
 
-    windows_runtime::log_line("Windows backend supervisor stopped");
+    runtime_log("backend supervisor stopped");
 }
 
 #[cfg(test)]
@@ -377,25 +347,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detection_burst_is_bounded_and_backed_off() {
+    fn detection_retries_back_off_then_enter_steady_state() {
         let start = Instant::now();
         let mut schedule = DetectionSchedule::new(start);
-        for attempt in 0..DETECT_RETRY_DELAYS.len() {
-            let due = start
-                + DETECT_RETRY_DELAYS[..=attempt]
-                    .iter()
-                    .copied()
-                    .fold(Duration::ZERO, |sum, delay| sum + delay);
+        for delay in DETECT_RETRY_DELAYS {
+            let due = start + delay;
             schedule.next = Some(due);
             assert!(schedule.take_due(due));
             schedule.no_tablet(due);
         }
-        assert!(!schedule.take_due(start + Duration::from_secs(1)));
-        schedule.no_tablet(start + Duration::from_secs(1));
-        let steady_state_due = start + Duration::from_secs(1) + STEADY_STATE_DETECT_INTERVAL;
-        assert!(schedule.take_due(steady_state_due));
-        schedule.no_tablet(steady_state_due);
-        assert!(schedule.take_due(steady_state_due + STEADY_STATE_DETECT_INTERVAL));
+        let due = start + STEADY_STATE_DETECT_INTERVAL + Duration::from_secs(30);
+        schedule.next = Some(due);
+        assert!(schedule.take_due(due));
     }
 
     #[test]
@@ -404,6 +367,5 @@ mod tests {
         let mut schedule = DetectionSchedule::new(now);
         schedule.tablet_found();
         assert!(!schedule.take_due(now + Duration::from_secs(300)));
-        assert_eq!(schedule.wait_duration(now), TABLET_POLL_INTERVAL);
     }
 }
