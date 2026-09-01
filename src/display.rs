@@ -132,23 +132,18 @@ fn parse_xrandr(stdout: &str) -> Vec<DisplayInfo> {
             continue;
         }
         let Some(geometry) = line.split_whitespace().find(|part| {
-            let Some(size_end) = part.find(|character: char| character == '+' || character == '-')
-            else {
+            let Some(size_end) = part.find(['+', '-']) else {
                 return false;
             };
-            part[..size_end].contains('x')
-                && part[size_end + 1..]
-                    .find(|character: char| character == '+' || character == '-')
-                    .is_some()
+            part[..size_end].contains('x') && part[size_end + 1..].find(['+', '-']).is_some()
         }) else {
             continue;
         };
-        let Some(size_end) = geometry.find(|character: char| character == '+' || character == '-')
-        else {
+        let Some(size_end) = geometry.find(['+', '-']) else {
             continue;
         };
         let Some(separator) = geometry[size_end + 1..]
-            .find(|character: char| character == '+' || character == '-')
+            .find(['+', '-'])
             .map(|offset| size_end + 1 + offset)
         else {
             continue;
