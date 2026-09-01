@@ -132,6 +132,20 @@ impl RpcClient {
     }
 
     pub fn call(&mut self, method: &str, params: Value) -> io::Result<Value> {
+        self.call_with_timeout(method, params, self.platform.rpc_timeout(method))
+    }
+
+    /// Like `call`, but overrides the platform's production `rpc_timeout`
+    /// with an explicit duration. Used by self-tests, which want a much
+    /// tighter deadline than production traffic tolerates (no real hardware
+    /// is attached, so a slow response means something is actually wrong,
+    /// not that a device is taking its time).
+    pub fn call_with_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> io::Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
         let body = serde_json::to_vec(&json!({
@@ -147,10 +161,10 @@ impl RpcClient {
         self.stream.flush()?;
 
         // Waits are sliced to CALL_POLL_INTERVAL (rather than one long
-        // recv_timeout for the whole rpc_timeout) so a shutdown request can
+        // recv_timeout for the whole timeout) so a shutdown request can
         // interrupt the wait quickly, and so a stray response carrying an
         // unrelated id can't keep resetting the deadline.
-        let deadline = Instant::now() + self.platform.rpc_timeout(method);
+        let deadline = Instant::now() + timeout;
         loop {
             if self.shutdown.load(Ordering::Acquire) {
                 return Err(io::Error::new(

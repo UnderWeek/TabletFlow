@@ -199,11 +199,42 @@ jobs:
             throw "Packaged Windows self-test failed with exit code $($process.ExitCode)"
           }
 
+      # Runs whether the smoke test above passed, failed, or timed out. The
+      # self-test writes its own progress log independent of the smoke
+      # directory (LOCALAPPDATA, not the temp folder the packaged ZIP was
+      # expanded into), so this is the only place that log survives to be
+      # inspected - the smoke-test step's own stdout/stderr capture doesn't
+      # include it.
+      - name: Print Windows diagnostics logs
+        if: always()
+        shell: pwsh
+        run: |
+          $tabletflowLog = Join-Path $env:LOCALAPPDATA "TabletFlow\Logs\tabletflow-windows.log"
+          $otdLog = Join-Path $env:LOCALAPPDATA "TabletFlow\Logs\opentabletdriver-console.log"
+          foreach ($path in @($tabletflowLog, $otdLog)) {
+            Write-Output "--- $path ---"
+            if (Test-Path -LiteralPath $path) {
+              Get-Content -LiteralPath $path
+            } else {
+              Write-Output "(not found)"
+            }
+          }
+
+      # Build-only workflow_dispatch runs on next produce a working ZIP
+      # before the smoke test ever runs. Uploading it here regardless of
+      # smoke-test outcome lets a physical Windows tester grab the dev build
+      # even when the smoke test is red - the smoke test itself stays a real,
+      # visible failure; this only preserves the artifact for manual
+      # follow-up. if-no-files-found: ignore means this step is a no-op (not
+      # a failure) on the rare path where packaging itself never produced a
+      # ZIP.
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: TabletFlow-windows-x64
           path: dist/*.zip
+          if-no-files-found: ignore
 
   linux:
     name: Linux x64
