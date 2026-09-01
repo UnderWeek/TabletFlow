@@ -280,7 +280,7 @@ unsafe extern "system" fn collect_windows_display(
 
 #[cfg(target_os = "windows")]
 fn enumerate_platform_displays() -> Vec<DisplayInfo> {
-    let mut bounds = Vec::new();
+    let mut bounds: Vec<WindowsDisplayBounds> = Vec::new();
     let result = unsafe {
         EnumDisplayMonitors(
             std::ptr::null_mut(),

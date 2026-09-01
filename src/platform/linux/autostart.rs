@@ -45,7 +45,7 @@ mod tests {
     fn executable_paths_are_quoted() {
         assert_eq!(
             super::quote(r#"/tmp/Tablet Flow/$test\"#),
-            r#"\"/tmp/Tablet Flow/\$test\\\""#
+            "\"/tmp/Tablet Flow/\\$test\\\\\""
         );
     }
 }

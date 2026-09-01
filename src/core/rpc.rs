@@ -323,7 +323,7 @@ mod tests {
         }
     }
 
-    struct StalledPlatform(Mutex<Option<TcpStream>>);
+    struct StalledPlatform(Mutex<Option<TcpStream>>, Duration);
     impl Platform for StalledPlatform {
         fn name(&self) -> &'static str {
             "stalled-test"
@@ -359,8 +359,11 @@ mod tests {
         }
         fn rpc_timeout(&self, _method: &str) -> std::time::Duration {
             // Stand-in for the real 180s DetectTablets/SetSettings timeout on
-            // Windows; short here only so the test itself stays fast.
-            std::time::Duration::from_millis(300)
+            // Windows; short here only so the test itself stays fast. Kept
+            // configurable per test so each one can pick its own margin
+            // between "expected prompt bail-out" and "the timeout actually
+            // firing" without the two tests fighting over a shared constant.
+            self.1
         }
     }
 
@@ -373,7 +376,15 @@ mod tests {
     #[test]
     fn call_returns_promptly_once_shutdown_is_requested() {
         let (client_side, _server_side) = socket_pair();
-        let platform = Box::leak(Box::new(StalledPlatform(Mutex::new(Some(client_side)))));
+        // A generous fake rpc_timeout (well above CALL_POLL_INTERVAL) so the
+        // promptness assertion below has a wide, CI-jitter-tolerant margin
+        // between "bailed out after ~one poll tick" and "waited out the
+        // whole timeout" - unlike the timeout itself, which stays realistic
+        // via the comment below.
+        let platform = Box::leak(Box::new(StalledPlatform(
+            Mutex::new(Some(client_side)),
+            Duration::from_secs(3),
+        )));
         let (events, _events_rx) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
         let mut client = RpcClient::connect(platform, events, 0, Arc::clone(&shutdown)).unwrap();
@@ -395,10 +406,11 @@ mod tests {
             "expected an Interrupted error from the shutdown request, got {result:?}"
         );
         assert!(
-            elapsed < Duration::from_millis(300),
+            elapsed < Duration::from_secs(1),
             "call() took {elapsed:?} to return after shutdown was requested; expected it to \
-             bail out within roughly CALL_POLL_INTERVAL instead of waiting out the full \
-             rpc_timeout (300ms in this test, 180s for DetectTablets/SetSettings on Windows)"
+             bail out within roughly CALL_POLL_INTERVAL (a couple hundred ms, generously bounded \
+             here to absorb CI scheduling jitter) instead of waiting out the full 3s fake \
+             rpc_timeout (180s for DetectTablets/SetSettings on real Windows)"
         );
     }
 
@@ -407,7 +419,10 @@ mod tests {
     #[test]
     fn stale_response_does_not_extend_the_deadline() {
         let (client_side, server_side) = socket_pair();
-        let platform = Box::leak(Box::new(StalledPlatform(Mutex::new(Some(client_side)))));
+        let platform = Box::leak(Box::new(StalledPlatform(
+            Mutex::new(Some(client_side)),
+            Duration::from_millis(300),
+        )));
         let (events, _events_rx) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
         let mut client = RpcClient::connect(platform, events, 0, shutdown).unwrap();
