@@ -1,12 +1,18 @@
-use super::ipc;
+use super::{ipc, runtime};
+use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-static MANAGED: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
-fn managed() -> &'static Mutex<Option<Child>> {
+struct ManagedDaemon {
+    child: Child,
+    path: PathBuf,
+}
+
+static MANAGED: OnceLock<Mutex<Option<ManagedDaemon>>> = OnceLock::new();
+fn managed() -> &'static Mutex<Option<ManagedDaemon>> {
     MANAGED.get_or_init(|| Mutex::new(None))
 }
 
@@ -59,12 +65,21 @@ pub fn owned_is_running() -> bool {
     let Ok(mut slot) = managed().lock() else {
         return false;
     };
-    let Some(child) = slot.as_mut() else {
+    let Some(daemon) = slot.as_mut() else {
         return false;
     };
-    match child.try_wait() {
+    match daemon.child.try_wait() {
         Ok(None) => true,
-        _ => {
+        Ok(Some(status)) => {
+            eprintln!(
+                "TabletFlow: packaged daemon exited status={status} path={}",
+                daemon.path.display()
+            );
+            *slot = None;
+            false
+        }
+        Err(error) => {
+            eprintln!("TabletFlow: failed to query packaged daemon: {error}");
             *slot = None;
             false
         }
@@ -88,17 +103,39 @@ pub fn start() -> io::Result<()> {
     } else {
         Command::new(&path)
     };
+    let app_data = runtime::otd_appdata_dir();
+    fs::create_dir_all(&app_data)?;
+    let log_dir = app_data
+        .parent()
+        .map(|parent| parent.join("Logs"))
+        .unwrap_or_else(|| app_data.join("Logs"));
+    fs::create_dir_all(&log_dir)?;
+    let log_path = log_dir.join("opentabletdriver-console.log");
+    let stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let stderr = stdout.try_clone()?;
     command
+        .arg("--appdata")
+        .arg(&app_data)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
     if let Some(directory) = path.parent() {
         command.current_dir(directory);
     }
+    eprintln!(
+        "TabletFlow: starting packaged daemon path={} log={}",
+        path.display(),
+        log_path.display()
+    );
     let child = command.spawn()?;
+    eprintln!("TabletFlow: packaged daemon pid={}", child.id());
     *managed()
         .lock()
-        .map_err(|_| io::Error::other("daemon process lock is poisoned"))? = Some(child);
+        .map_err(|_| io::Error::other("daemon process lock is poisoned"))? =
+        Some(ManagedDaemon { child, path });
     Ok(())
 }
 
@@ -106,9 +143,13 @@ pub fn stop() {
     let Ok(mut slot) = managed().lock() else {
         return;
     };
-    if let Some(mut child) = slot.take() {
-        let _ = child.kill();
-        let _ = child.wait();
+    if let Some(mut daemon) = slot.take() {
+        eprintln!(
+            "TabletFlow: stopping packaged daemon pid={}",
+            daemon.child.id()
+        );
+        let _ = daemon.child.kill();
+        let _ = daemon.child.wait();
     }
 }
 

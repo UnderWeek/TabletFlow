@@ -37,11 +37,18 @@ fn self_test() -> io::Result<()> {
                 0,
                 std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             )?;
-            let tablets = client.call("GetTablets", json!([]))?;
+            // Exercises the real pipeline sequence backend.rs relies on, not
+            // just connectivity: DetectTablets (no physical tablet is
+            // required - an empty result is fine), GetSettings, SetSettings
+            // with those same settings, then GetSettings again to make sure
+            // the round trip doesn't wedge the daemon. GetTablets alone
+            // would only prove the pipe is open, not that this RPC sequence
+            // actually works end to end.
+            let tablets = client.call("DetectTablets", json!([]))?;
             if !tablets.is_array() {
                 break Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "GetTablets returned a non-array result",
+                    "DetectTablets returned a non-array result",
                 ));
             }
             let settings = client.call("GetSettings", json!([]))?;
@@ -49,6 +56,14 @@ fn self_test() -> io::Result<()> {
                 break Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "GetSettings returned null",
+                ));
+            }
+            client.call("SetSettings", json!([settings]))?;
+            let settings_after = client.call("GetSettings", json!([]))?;
+            if settings_after.is_null() {
+                break Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "GetSettings returned null after SetSettings",
                 ));
             }
             break Ok(());

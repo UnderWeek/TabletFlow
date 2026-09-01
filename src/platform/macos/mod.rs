@@ -62,4 +62,7 @@ impl Platform for MacOsPlatform {
     fn run_driver_self_test(&self) -> io::Result<()> {
         daemon::self_test()
     }
+    fn persist_driver_settings(&self, settings: &serde_json::Value) -> io::Result<()> {
+        runtime::persist_driver_settings(settings)
+    }
 }

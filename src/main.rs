@@ -90,6 +90,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = MainWindow::new()?;
     ui_bridge::apply_settings(&ui, &settings);
+    ui.set_default_close_to_tray(platform.default_close_to_tray());
     ui_bridge::initialize_permissions(&ui, platform);
 
     if let Err(error) = settings.save(platform) {
@@ -101,6 +102,17 @@ fn main() -> Result<(), slint::PlatformError> {
         platform.log(&format!("failed to configure autostart: {error}"));
     }
 
+    // TODO(display-topology-changes): `displays` is captured once here and
+    // moved into the backend thread for the rest of the process's life. If
+    // monitors are connected/disconnected/rearranged afterward, the backend
+    // keeps mapping OTD's Display settings against this stale list, and
+    // `ui_bridge::set_monitor_options` is never called again, so the picker
+    // can also go stale. A full watcher is out of scope here; the smallest
+    // fix that stays testable is to re-run `display::enumerate_displays()`
+    // and `ui_bridge::set_monitor_options` whenever the user hits
+    // Detect/Reload (`BackendCommand::Detect` / `RefreshSettings`), and pass
+    // the refreshed list into `backend::run`'s next `query_backend` call
+    // instead of the one captured at startup.
     let displays = display::enumerate_displays();
     ui_bridge::set_monitor_options(&ui, &displays);
 

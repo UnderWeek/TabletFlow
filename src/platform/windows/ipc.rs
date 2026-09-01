@@ -3,6 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::windows::io::AsRawHandle;
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_SEM_TIMEOUT};
 use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
 use windows_sys::Win32::System::IO::CancelSynchronousIo;
@@ -10,6 +11,14 @@ use windows_sys::Win32::System::IO::CancelSynchronousIo;
 use super::runtime::wide;
 
 const PIPE_PATH: &str = r"\\.\pipe\OpenTabletDriver.Daemon";
+
+/// Upper bound on how long `WindowsTransport::interrupt` keeps retrying
+/// `CancelSynchronousIo`. If the reader is still blocked after this, the
+/// caller (`ReaderGuard::drop`'s watchdog) gives up on it too, so this loop
+/// must not spin forever - just long enough to give a normally-behaving
+/// pending read several chances to notice the cancellation.
+const CANCEL_RETRY_DEADLINE: Duration = Duration::from_secs(2);
+const CANCEL_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 
 pub(super) struct WindowsTransport(File);
 
@@ -36,12 +45,18 @@ impl Transport for WindowsTransport {
 
     fn interrupt(&self, reader: &JoinHandle<()>) {
         let handle = reader.as_raw_handle();
-        while !reader.is_finished() {
+        let deadline = Instant::now() + CANCEL_RETRY_DEADLINE;
+        while !reader.is_finished() && Instant::now() < deadline {
             unsafe {
                 let _ = CancelSynchronousIo(handle);
             }
-            std::thread::yield_now();
+            std::thread::sleep(CANCEL_RETRY_INTERVAL);
         }
+        // If CancelSynchronousIo never manages to wake a wedged reader, this
+        // returns without the reader having finished. That's fine: the
+        // caller (ReaderGuard::drop) has its own bounded watchdog and treats
+        // a still-blocked reader as a leaked thread rather than a hang, so
+        // this loop must exit rather than spin on yield_now() forever.
     }
 }
 

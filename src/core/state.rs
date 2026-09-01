@@ -3,6 +3,13 @@ use std::time::{Duration, Instant};
 pub const TABLET_POLL_INTERVAL: Duration = Duration::from_millis(900);
 pub const START_RETRY_INTERVAL: Duration = Duration::from_millis(1500);
 pub const IPC_STARTUP_DEADLINE: Duration = Duration::from_secs(180);
+/// Grace period given to an owned daemon that was previously connected and
+/// then lost IPC (as opposed to one still starting up). Shorter than
+/// `IPC_STARTUP_DEADLINE` because a daemon that already proved it can create
+/// its IPC endpoint once is expected to recover quickly or not at all -
+/// waiting the full startup deadline here would leave TabletFlow stuck
+/// pointing at a hung-but-alive process for minutes.
+pub const IPC_RECONNECT_GRACE: Duration = Duration::from_secs(20);
 pub const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
 const DETECT_RETRY_DELAYS: [Duration; 6] = [
     Duration::ZERO,
@@ -26,7 +33,13 @@ pub enum ConnectionAction {
 #[derive(Debug)]
 pub struct DaemonLifecycle {
     last_start_attempt: Option<Instant>,
-    startup_wait_started: Option<Instant>,
+    // Absolute deadline by which an owned daemon must have usable IPC, set
+    // both while it is starting up (`spawn_succeeded`) and again if it was
+    // connected and then lost IPC while still alive (`disconnected`). Without
+    // the latter, `next_action` would return `WaitForIpc` forever once
+    // `connected()` had cleared this field, even though the owned process is
+    // still running and unresponsive.
+    ipc_wait_deadline: Option<Instant>,
     connected: bool,
 }
 
@@ -34,7 +47,7 @@ impl DaemonLifecycle {
     pub fn new() -> Self {
         Self {
             last_start_attempt: None,
-            startup_wait_started: None,
+            ipc_wait_deadline: None,
             connected: false,
         }
     }
@@ -49,9 +62,10 @@ impl DaemonLifecycle {
             return ConnectionAction::Connect;
         }
         if owned_daemon_running {
-            if self.startup_wait_started.is_some_and(|started| {
-                now.saturating_duration_since(started) >= IPC_STARTUP_DEADLINE
-            }) {
+            if self
+                .ipc_wait_deadline
+                .is_some_and(|deadline| now >= deadline)
+            {
                 ConnectionAction::RestartOwnedDaemon
             } else {
                 ConnectionAction::WaitForIpc
@@ -79,24 +93,34 @@ impl DaemonLifecycle {
     }
 
     pub fn spawn_succeeded(&mut self, now: Instant) {
-        self.startup_wait_started = Some(now);
+        self.ipc_wait_deadline = Some(now + IPC_STARTUP_DEADLINE);
     }
 
     pub fn spawn_failed(&mut self) {
-        self.startup_wait_started = None;
+        self.ipc_wait_deadline = None;
     }
 
     pub fn connected(&mut self) {
         self.connected = true;
-        self.startup_wait_started = None;
+        self.ipc_wait_deadline = None;
     }
 
-    pub fn disconnected(&mut self) {
+    /// Must be called with the daemon-ownership state observed at disconnect
+    /// time: if an owned daemon process is still alive, this starts (or
+    /// keeps) a bounded grace period after which `next_action` will report
+    /// `RestartOwnedDaemon` instead of waiting for IPC indefinitely.
+    pub fn disconnected(&mut self, now: Instant, owned_daemon_running: bool) {
         self.connected = false;
+        if owned_daemon_running {
+            self.ipc_wait_deadline
+                .get_or_insert(now + IPC_RECONNECT_GRACE);
+        } else {
+            self.ipc_wait_deadline = None;
+        }
     }
 
     pub fn owned_daemon_stopped(&mut self) {
-        self.startup_wait_started = None;
+        self.ipc_wait_deadline = None;
     }
 
     #[cfg(test)]
@@ -247,11 +271,61 @@ mod tests {
         let mut lifecycle = DaemonLifecycle::new();
         lifecycle.connected();
         assert!(lifecycle.is_connected());
-        lifecycle.disconnected();
+        lifecycle.disconnected(now, false);
         assert!(!lifecycle.is_connected());
         assert_eq!(
             lifecycle.next_action(now, true, false),
             ConnectionAction::Connect
+        );
+    }
+
+    // Regression test: spawn -> connect -> IPC lost while the owned daemon
+    // process remains alive must not wait for IPC forever. Before this fix,
+    // `connected()` cleared the only deadline tracked, so a lost-but-alive
+    // owned daemon produced `WaitForIpc` indefinitely and TabletFlow never
+    // restarted it.
+    #[test]
+    fn owned_daemon_disconnect_after_connect_restarts_after_grace_period() {
+        let now = Instant::now();
+        let mut lifecycle = DaemonLifecycle::new();
+        lifecycle.start_attempted(now);
+        lifecycle.spawn_succeeded(now);
+        assert_eq!(
+            lifecycle.next_action(now + Duration::from_millis(10), true, true),
+            ConnectionAction::Connect
+        );
+        lifecycle.connected();
+
+        let disconnect_time = now + Duration::from_secs(30);
+        lifecycle.disconnected(disconnect_time, true);
+
+        // Still within the grace period: keep waiting for IPC to come back,
+        // not StartOwnedDaemon (the process is still alive) and not stuck
+        // forever either.
+        assert_eq!(
+            lifecycle.next_action(disconnect_time + Duration::from_secs(1), false, true),
+            ConnectionAction::WaitForIpc
+        );
+
+        assert_eq!(
+            lifecycle.next_action(disconnect_time + IPC_RECONNECT_GRACE, false, true),
+            ConnectionAction::RestartOwnedDaemon
+        );
+    }
+
+    // Regression test: a disconnect from an external (non-owned) daemon must
+    // not start an IPC-wait deadline - TabletFlow never restarts processes it
+    // doesn't own, so it should fall through to StartOwnedDaemon once the
+    // usual retry interval has passed.
+    #[test]
+    fn external_daemon_disconnect_does_not_arm_a_restart_deadline() {
+        let now = Instant::now();
+        let mut lifecycle = DaemonLifecycle::new();
+        lifecycle.connected();
+        lifecycle.disconnected(now, false);
+        assert_eq!(
+            lifecycle.next_action(now + IPC_RECONNECT_GRACE * 10, false, false),
+            ConnectionAction::StartOwnedDaemon
         );
     }
 

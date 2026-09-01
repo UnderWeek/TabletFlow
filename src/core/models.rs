@@ -5,9 +5,19 @@ pub enum BackendCommand {
     Detect,
     StartDaemon,
     Shutdown,
-    TabletChanged { generation: u64 },
-    DriverDisconnected { generation: u64, reason: String },
+    TabletChanged {
+        generation: u64,
+    },
+    DriverDisconnected {
+        generation: u64,
+        reason: String,
+    },
     ApplyArea(AreaRequest),
+    /// Invalidates the cached driver settings and re-fetches them, so a user
+    /// clicking "Reload" sees whatever OpenTabletDriver actually has right
+    /// now (e.g. changed by its own GUI) instead of just reverting the UI
+    /// draft back to a possibly-stale in-memory snapshot.
+    RefreshSettings,
 }
 
 #[derive(Clone, Debug)]

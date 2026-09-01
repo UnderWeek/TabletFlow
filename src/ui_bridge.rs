@@ -250,8 +250,20 @@ pub fn wire(
         },
     );
 
+    let refresh_commands = backend_commands.clone();
+    ui.on_refresh_area(move || {
+        let _ = refresh_commands.send(BackendCommand::RefreshSettings);
+    });
+
     let weak_ui = ui.as_weak();
     let weak_tray = tray.as_weak();
+    // Only re-runs `configure_autostart` (which shells out to `launchctl` on
+    // macOS / rewrites a `.desktop` file on Linux / touches the registry on
+    // Windows) when the two settings it actually depends on changed, instead
+    // of on every settings-changed event - including ones from unrelated
+    // controls like a color slider drag.
+    let last_autostart_settings =
+        std::cell::Cell::new((ui.get_start_with_system(), ui.get_start_minimized()));
     ui.on_settings_changed(move || {
         let Some(ui) = weak_ui.upgrade() else {
             return;
@@ -261,10 +273,15 @@ pub fn wire(
         if let Err(error) = settings.save(platform) {
             platform.log(&format!("failed to save settings: {error}"));
         }
-        if let Err(error) =
-            platform.configure_autostart(settings.start_with_system, settings.start_minimized)
-        {
-            platform.log(&format!("failed to configure autostart: {error}"));
+        let autostart_settings = (settings.start_with_system, settings.start_minimized);
+        if autostart_settings != last_autostart_settings.get() {
+            if let Err(error) =
+                platform.configure_autostart(settings.start_with_system, settings.start_minimized)
+            {
+                platform.log(&format!("failed to configure autostart: {error}"));
+            } else {
+                last_autostart_settings.set(autostart_settings);
+            }
         }
         if let Some(tray) = weak_tray.upgrade() {
             tray.set_shown(settings.close_to_tray);

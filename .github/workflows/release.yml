@@ -66,11 +66,6 @@ jobs:
           daemon_path="$(./packaging/build-daemon.sh "${{ matrix.rid }}" build/otd)"
           echo "daemon_path=$daemon_path" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke-test macOS driver
-        env:
-          TABLETFLOW_RESOURCE_DIR: ${{ github.workspace }}/build/otd
-        run: target/release/tabletflow --driver-self-test
-
       - name: Import code signing certificate
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
@@ -100,6 +95,14 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           if [[ "$VERSION" == "$RELEASE_TAG" ]]; then VERSION="0.1.0"; fi
           TABLETFLOW_VERSION="$VERSION" ./packaging/macos/package.sh dist
+
+      # Smoke-tests the SHIPPED app bundle: the exact signed daemon binary,
+      # directory layout, and code signature end users receive - not the raw
+      # unsigned build/otd output. Apple Silicon has been observed killing an
+      # unsigned daemon with status 137, a failure mode the pre-packaging
+      # smoke test could never catch since it never ran signed code.
+      - name: Smoke-test packaged macOS app
+        run: dist/TabletFlow.app/Contents/MacOS/TabletFlow --driver-self-test
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4

@@ -15,11 +15,20 @@ use std::time::{Duration, Instant};
 const CALL_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Longest ReaderGuard::drop waits for the reader thread to actually stop
-/// before giving up on it. Transport::interrupt (e.g. the Windows
-/// implementation's `while !reader.is_finished() { CancelSynchronousIo; }`
-/// loop) has no bound of its own, so if the platform ever fails to wake a
-/// blocked read this keeps shutdown/reconnect from hanging forever.
+/// before giving up on it. Each Transport::interrupt implementation (e.g.
+/// the Windows one, which retries `CancelSynchronousIo` for up to its own
+/// bounded deadline) is expected to return promptly even if it never
+/// actually wakes the blocked reader, but this timeout is the last line of
+/// defense: if a platform's interrupt somehow still blocks, or the reader
+/// never notices the cancellation, shutdown/reconnect gives up on the
+/// watchdog thread rather than hanging forever.
 const READER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Upper bound on a single RPC message body. OpenTabletDriver's real
+/// responses (tablet lists, settings) are at most a few hundred KB; this
+/// just keeps a malformed or hostile local peer from making `read_message`
+/// allocate an unbounded `Vec<u8>` off of a bogus Content-Length.
+const MAX_MESSAGE_LEN: usize = 64 * 1024 * 1024;
 
 struct ReaderGuard {
     cancelled: Arc<AtomicBool>,
@@ -241,6 +250,12 @@ pub fn read_message(stream: &mut dyn Read) -> io::Result<Value> {
                 .flatten()
         })
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "RPC content length missing"))?;
+    if content_length > MAX_MESSAGE_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("RPC content length {content_length} exceeds the {MAX_MESSAGE_LEN}-byte limit"),
+        ));
+    }
     let mut body = vec![0u8; content_length];
     stream.read_exact(&mut body)?;
     serde_json::from_slice(&body).map_err(io::Error::other)
@@ -251,9 +266,30 @@ mod tests {
     use super::*;
     use crate::platform::Platform;
     use std::io::Cursor;
-    use std::os::unix::net::UnixStream;
+    use std::net::{TcpListener, TcpStream};
     use std::path::PathBuf;
     use std::sync::Mutex;
+
+    /// Cross-platform stand-in for `UnixStream::pair()` (not available on
+    /// Windows). A loopback TCP connection behaves the same way for these
+    /// tests: both ends are `Read + Write`, support `try_clone`, and support
+    /// `shutdown()` to unblock a peer stuck in a blocking read.
+    fn socket_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = TcpStream::connect(addr).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        client.set_nodelay(true).ok();
+        server.set_nodelay(true).ok();
+        (client, server)
+    }
+
+    #[test]
+    fn rejects_content_length_above_the_limit() {
+        let frame = format!("Content-Length: {}\r\n\r\n", MAX_MESSAGE_LEN + 1).into_bytes();
+        let error = read_message(&mut Cursor::new(frame)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
 
     #[test]
     fn parses_content_length_frame() {
@@ -264,7 +300,7 @@ mod tests {
         assert_eq!(value["id"], 1);
     }
 
-    struct StalledTransport(UnixStream);
+    struct StalledTransport(TcpStream);
     impl Read for StalledTransport {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             self.0.read(buf)
@@ -287,7 +323,7 @@ mod tests {
         }
     }
 
-    struct StalledPlatform(Mutex<Option<UnixStream>>);
+    struct StalledPlatform(Mutex<Option<TcpStream>>);
     impl Platform for StalledPlatform {
         fn name(&self) -> &'static str {
             "stalled-test"
@@ -336,7 +372,7 @@ mod tests {
     // behind an in-flight call() like this one.
     #[test]
     fn call_returns_promptly_once_shutdown_is_requested() {
-        let (client_side, _server_side) = UnixStream::pair().unwrap();
+        let (client_side, _server_side) = socket_pair();
         let platform = Box::leak(Box::new(StalledPlatform(Mutex::new(Some(client_side)))));
         let (events, _events_rx) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -370,7 +406,7 @@ mod tests {
     // timed-out call must not reset the deadline for the current call.
     #[test]
     fn stale_response_does_not_extend_the_deadline() {
-        let (client_side, server_side) = UnixStream::pair().unwrap();
+        let (client_side, server_side) = socket_pair();
         let platform = Box::leak(Box::new(StalledPlatform(Mutex::new(Some(client_side)))));
         let (events, _events_rx) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -409,7 +445,7 @@ mod tests {
         );
     }
 
-    struct UninterruptibleTransport(UnixStream);
+    struct UninterruptibleTransport(TcpStream);
     impl Read for UninterruptibleTransport {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             self.0.read(buf)
@@ -432,7 +468,7 @@ mod tests {
         fn interrupt(&self, _reader: &thread::JoinHandle<()>) {}
     }
 
-    struct UninterruptiblePlatform(Mutex<Option<UnixStream>>);
+    struct UninterruptiblePlatform(Mutex<Option<TcpStream>>);
     impl Platform for UninterruptiblePlatform {
         fn name(&self) -> &'static str {
             "uninterruptible-test"
@@ -476,7 +512,7 @@ mod tests {
     // transitively.
     #[test]
     fn dropping_client_does_not_hang_when_interrupt_never_wakes_reader() {
-        let (client_side, _server_side) = UnixStream::pair().unwrap();
+        let (client_side, _server_side) = socket_pair();
         let platform = Box::leak(Box::new(UninterruptiblePlatform(Mutex::new(Some(
             client_side,
         )))));

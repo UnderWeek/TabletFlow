@@ -1,5 +1,5 @@
 use crate::core::models::{AreaRequest, BackendCommand, BackendSnapshot};
-use crate::core::rpc::{query_tablets, RpcClient};
+use crate::core::rpc::{query_tablets, DriverRpc, RpcClient};
 use crate::core::state::{
     ConnectionAction, DaemonLifecycle, DetectionSchedule, BACKEND_RECONNECT_INTERVAL,
     TABLET_POLL_INTERVAL,
@@ -225,12 +225,19 @@ fn query_backend(
     Ok(snapshot)
 }
 
-fn apply_area(
-    client: &mut RpcClient,
+/// Applies `request` to `settings`, sends `SetSettings`, then confirms via a
+/// `GetSettings` readback that OpenTabletDriver actually accepted every field
+/// TabletFlow changed (tablet area, display area if requested, and frequency
+/// if a filter setting for it was actually found and changed). On success
+/// returns an `AreaRequest` built from the *actual* readback rather than the
+/// caller's original request, so the UI never reports "confirmed" values
+/// that don't match what the driver is really using.
+fn apply_area<C: DriverRpc>(
+    client: &mut C,
     platform: &'static dyn Platform,
     settings: &mut Value,
     request: AreaRequest,
-) -> io::Result<()> {
+) -> io::Result<AreaRequest> {
     let original_settings = settings.clone();
     let profiles = json_member_mut(settings, "Profiles")
         .and_then(Value::as_array_mut)
@@ -243,24 +250,30 @@ fn apply_area(
         .and_then(|absolute| json_member_mut(absolute, "Tablet"))
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Tablet area missing"))?;
 
-    let mut requested_area = Vec::with_capacity(5);
-    for (name, value) in [
-        ("Width", request.width.as_str()),
-        ("Height", request.height.as_str()),
-        ("X", request.x.as_str()),
-        ("Y", request.y.as_str()),
-        ("Rotation", request.rotation.as_str()),
-    ] {
-        let number = validation::finite_number(name, value)?;
+    let requested_area = [
+        (
+            "Width",
+            validation::positive_dimension("Width", &request.width)?,
+        ),
+        (
+            "Height",
+            validation::positive_dimension("Height", &request.height)?,
+        ),
+        ("X", validation::finite_number("X", &request.x)?),
+        ("Y", validation::finite_number("Y", &request.y)?),
+        ("Rotation", validation::rotation(&request.rotation)?),
+    ];
+    for (name, number) in requested_area {
         *json_member_mut(area, name).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Area field {name} missing"),
             )
         })? = json!(number);
-        requested_area.push((name, number));
     }
+
     let frequency = validation::frequency(&request.frequency)?;
+    let mut frequency_updated = false;
     if let Some(filters) = json_member_mut(profile, "Filters").and_then(Value::as_array_mut) {
         for filter in filters {
             if let Some(filter_settings) =
@@ -270,22 +283,26 @@ fn apply_area(
                     if json_string(setting, "Property").as_deref() == Some("Frequency") {
                         if let Some(value) = json_member_mut(setting, "Value") {
                             *value = json!(frequency);
+                            frequency_updated = true;
                         }
                     }
                 }
             }
         }
     }
+
+    let mut requested_display: Option<[(&str, f32); 4]> = None;
     if let Some(display) = &request.display {
         let display_area = json_member_mut(profile, "AbsoluteModeSettings")
             .and_then(|absolute| json_member_mut(absolute, "Display"))
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Display area missing"))?;
-        for (name, number) in [
+        let values = [
             ("Width", display.width),
             ("Height", display.height),
             ("X", display.x),
             ("Y", display.y),
-        ] {
+        ];
+        for (name, number) in values {
             *json_member_mut(display_area, name).ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -293,15 +310,17 @@ fn apply_area(
                 )
             })? = json!(number);
         }
+        requested_display = Some(values);
     }
+
     if *settings == original_settings {
-        return Ok(());
+        return Ok(request);
     }
-    client.call("SetSettings", json!([settings]))?;
+    client.rpc_call("SetSettings", json!([settings]))?;
 
     for _ in 0..5 {
         thread::sleep(Duration::from_millis(300));
-        let Ok(readback) = client.call("GetSettings", json!([])) else {
+        let Ok(readback) = client.rpc_call("GetSettings", json!([])) else {
             continue;
         };
         let Some(profile) = settings_for_tablet(&readback, &request.tablet_name) else {
@@ -312,25 +331,48 @@ fn apply_area(
         else {
             continue;
         };
-        let matches = requested_area.iter().all(|(name, expected)| {
+        let tablet_matches = requested_area.iter().all(|(name, expected)| {
             json_member(area, name)
                 .and_then(Value::as_f64)
                 .is_some_and(|actual| (actual - expected).abs() < 0.005)
         });
-        if matches {
+        let display_matches = match requested_display {
+            None => true,
+            Some(values) => json_member(&profile, "AbsoluteModeSettings")
+                .and_then(|absolute| json_member(absolute, "Display"))
+                .is_some_and(|display_area| {
+                    values.iter().all(|(name, expected)| {
+                        json_member(display_area, name)
+                            .and_then(Value::as_f64)
+                            .is_some_and(|actual| (actual - *expected as f64).abs() < 0.5)
+                    })
+                }),
+        };
+        let frequency_matches = !frequency_updated
+            || filter_frequency(&profile)
+                .parse::<f64>()
+                .is_ok_and(|actual| (actual - frequency).abs() < 0.5);
+
+        if tablet_matches && display_matches && frequency_matches {
+            let actual = AreaRequest {
+                tablet_name: request.tablet_name,
+                width: json_number_string(area, "Width"),
+                height: json_number_string(area, "Height"),
+                x: json_number_string(area, "X"),
+                y: json_number_string(area, "Y"),
+                rotation: json_number_string(area, "Rotation"),
+                frequency: filter_frequency(&profile),
+                display: request.display,
+            };
             *settings = readback;
             platform.persist_driver_settings(settings)?;
-            return Ok(());
+            return Ok(actual);
         }
     }
-    if platform.restore_pipeline_after_detect() {
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "OpenTabletDriver did not confirm the requested area",
-        ))
-    } else {
-        Ok(())
-    }
+    Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "OpenTabletDriver did not confirm the requested area",
+    ))
 }
 
 pub fn run(
@@ -404,7 +446,7 @@ pub fn run(
                         "driver IPC disconnected generation={generation}: {reason}"
                     ));
                     client = None;
-                    lifecycle.disconnected();
+                    lifecycle.disconnected(Instant::now(), platform.owned_daemon_running());
                     refresh_requested = true;
                     driver_settings = None;
                     sink.connection_state("daemon-starting");
@@ -412,6 +454,10 @@ pub fn run(
                 BackendCommand::TabletChanged { .. }
                 | BackendCommand::DriverDisconnected { .. } => {}
                 BackendCommand::ApplyArea(request) => queued_apply = Some(request),
+                BackendCommand::RefreshSettings => {
+                    driver_settings = None;
+                    refresh_requested = true;
+                }
             }
         }
 
@@ -491,7 +537,7 @@ pub fn run(
                     sink.connection_state("daemon-starting");
                 }
                 Err(error) => {
-                    lifecycle.disconnected();
+                    lifecycle.disconnected(Instant::now(), platform.owned_daemon_running());
                     platform.log(&format!(
                         "waiting for driver IPC generation={generation}: {error}"
                     ));
@@ -530,7 +576,7 @@ pub fn run(
                 Err(error) => {
                     platform.log(&format!("driver RPC query failed: {error}"));
                     client = None;
-                    lifecycle.disconnected();
+                    lifecycle.disconnected(Instant::now(), platform.owned_daemon_running());
                     driver_settings = None;
                     refresh_requested = true;
                     sink.connection_state("daemon-starting");
@@ -550,23 +596,22 @@ pub fn run(
                     Err(_) => {
                         queued_apply = Some(request);
                         client = None;
-                        lifecycle.disconnected();
+                        lifecycle.disconnected(Instant::now(), platform.owned_daemon_running());
                         refresh_requested = true;
                         continue;
                     }
                 }
             }
-            let applied = request.clone();
             let result = driver_settings
                 .as_mut()
                 .ok_or_else(|| io::Error::other("driver settings cache is empty"))
                 .and_then(|settings| apply_area(connection, platform, settings, request));
             match result {
-                Ok(()) => sink.applied_area(applied),
+                Ok(actual) => sink.applied_area(actual),
                 Err(error) => {
                     platform.log(&format!("failed to apply tablet area: {error}"));
                     client = None;
-                    lifecycle.disconnected();
+                    lifecycle.disconnected(Instant::now(), platform.owned_daemon_running());
                     driver_settings = None;
                     refresh_requested = true;
                     sink.connection_state("daemon-starting");
@@ -592,4 +637,227 @@ pub fn run(
         }
     }
     platform.log("backend supervisor stopped");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    struct NoopPlatform;
+    impl Platform for NoopPlatform {
+        fn name(&self) -> &'static str {
+            "test"
+        }
+        fn settings_path(&self) -> Option<PathBuf> {
+            None
+        }
+        fn acquire_instance_guard(&self) -> Option<Box<dyn Send>> {
+            None
+        }
+        fn connect_transport(&self) -> io::Result<Box<dyn crate::platform::Transport>> {
+            Err(io::Error::other("not used in this test"))
+        }
+        fn ipc_available(&self) -> bool {
+            false
+        }
+        fn owned_daemon_running(&self) -> bool {
+            false
+        }
+        fn start_daemon(&self) -> io::Result<()> {
+            Ok(())
+        }
+        fn stop_daemon(&self) {}
+        fn configure_autostart(&self, _enabled: bool, _start_minimized: bool) -> io::Result<()> {
+            Ok(())
+        }
+        fn open_url(&self, _url: &str) -> io::Result<()> {
+            Ok(())
+        }
+        fn run_driver_self_test(&self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn platform() -> &'static dyn Platform {
+        Box::leak(Box::new(NoopPlatform))
+    }
+
+    const TABLET: &str = "Test Tablet";
+
+    /// `tablet` is (Width, Height, X, Y, Rotation); `display` is
+    /// (Width, Height, X, Y).
+    fn settings_with(tablet: [f64; 5], display: [f64; 4], frequency: f64) -> Value {
+        let [tablet_w, tablet_h, tablet_x, tablet_y, rotation] = tablet;
+        let [display_w, display_h, display_x, display_y] = display;
+        json!({
+            "Profiles": [{
+                "Tablet": TABLET,
+                "AbsoluteModeSettings": {
+                    "Tablet": {
+                        "Width": tablet_w,
+                        "Height": tablet_h,
+                        "X": tablet_x,
+                        "Y": tablet_y,
+                        "Rotation": rotation,
+                    },
+                    "Display": {
+                        "Width": display_w,
+                        "Height": display_h,
+                        "X": display_x,
+                        "Y": display_y,
+                    },
+                },
+                "Filters": [{
+                    "Enable": true,
+                    "Settings": [{
+                        "Property": "Frequency",
+                        "Value": frequency,
+                    }],
+                }],
+            }],
+        })
+    }
+
+    fn area_request(display: Option<DisplayInfo>) -> AreaRequest {
+        AreaRequest {
+            tablet_name: TABLET.to_string(),
+            width: "150".to_string(),
+            height: "90".to_string(),
+            x: "75".to_string(),
+            y: "45".to_string(),
+            rotation: "0".to_string(),
+            frequency: "500".to_string(),
+            display,
+        }
+    }
+
+    fn display_info() -> DisplayInfo {
+        DisplayInfo {
+            index: 0,
+            label: "Display 1".into(),
+            width: 1920.0,
+            height: 1080.0,
+            x: 960.0,
+            y: 540.0,
+            detected: true,
+            primary: true,
+        }
+    }
+
+    /// A scripted `DriverRpc` double: `SetSettings` is a no-op, and
+    /// `GetSettings` returns the next canned readback from `responses` (or an
+    /// error once exhausted, which `apply_area`'s retry loop treats the same
+    /// as a transient RPC failure).
+    struct ScriptedClient {
+        responses: RefCell<std::vec::IntoIter<Value>>,
+    }
+    impl ScriptedClient {
+        fn new(responses: Vec<Value>) -> Self {
+            Self {
+                responses: RefCell::new(responses.into_iter()),
+            }
+        }
+    }
+    impl DriverRpc for ScriptedClient {
+        fn rpc_call(&mut self, method: &str, _params: Value) -> io::Result<Value> {
+            match method {
+                "SetSettings" => Ok(Value::Null),
+                "GetSettings" => self
+                    .responses
+                    .borrow_mut()
+                    .next()
+                    .ok_or_else(|| io::Error::other("no more scripted responses")),
+                other => panic!("unexpected RPC method {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn confirmed_readback_reports_actual_tablet_display_and_frequency() {
+        let mut client = ScriptedClient::new(vec![settings_with(
+            [150.0, 90.0, 75.0, 45.0, 0.0],
+            [1920.0, 1080.0, 960.0, 540.0],
+            500.0,
+        )]);
+        let mut settings = settings_with(
+            [152.0, 95.0, 0.0, 0.0, 0.0],
+            [1920.0, 1080.0, 0.0, 0.0],
+            1000.0,
+        );
+        let result = apply_area(
+            &mut client,
+            platform(),
+            &mut settings,
+            area_request(Some(display_info())),
+        );
+        let actual = result.expect("readback should confirm the requested area");
+        assert_eq!(actual.width, "150");
+        assert_eq!(actual.height, "90");
+        assert_eq!(actual.frequency, "500");
+    }
+
+    #[test]
+    fn tablet_matches_but_display_mismatch_is_a_failure() {
+        // Display X/Y never move off their original (unrequested) values,
+        // simulating OTD accepting the tablet area but not the display area.
+        let mut client = ScriptedClient::new(vec![settings_with(
+            [150.0, 90.0, 75.0, 45.0, 0.0],
+            [1920.0, 1080.0, 0.0, 0.0],
+            500.0,
+        )]);
+        let mut settings = settings_with(
+            [152.0, 95.0, 0.0, 0.0, 0.0],
+            [1920.0, 1080.0, 0.0, 0.0],
+            1000.0,
+        );
+        let result = apply_area(
+            &mut client,
+            platform(),
+            &mut settings,
+            area_request(Some(display_info())),
+        );
+        assert!(
+            result.is_err(),
+            "a display-area mismatch must fail confirmation even though the tablet area matched"
+        );
+    }
+
+    #[test]
+    fn tablet_matches_but_frequency_mismatch_is_a_failure() {
+        // Frequency stays at its original value while the tablet area moved,
+        // simulating OTD dropping the frequency change.
+        let mut client = ScriptedClient::new(vec![settings_with(
+            [150.0, 90.0, 75.0, 45.0, 0.0],
+            [1920.0, 1080.0, 960.0, 540.0],
+            1000.0,
+        )]);
+        let mut settings = settings_with(
+            [152.0, 95.0, 0.0, 0.0, 0.0],
+            [1920.0, 1080.0, 960.0, 540.0],
+            1000.0,
+        );
+        let result = apply_area(&mut client, platform(), &mut settings, area_request(None));
+        assert!(
+            result.is_err(),
+            "a frequency mismatch must fail confirmation even though the tablet area matched"
+        );
+    }
+
+    // Regression test: when apply_area's readback never confirms the
+    // requested values, backend::run's `Ok(actual) => sink.applied_area(actual)`
+    // match arm is never reached - callers must treat Err as "do not publish
+    // an applied-area event", not silently succeed as pre-fix macOS/Linux did.
+    #[test]
+    fn failed_readback_never_yields_an_ok_result() {
+        let mut client = ScriptedClient::new(Vec::new());
+        let mut settings = settings_with(
+            [152.0, 95.0, 0.0, 0.0, 0.0],
+            [1920.0, 1080.0, 960.0, 540.0],
+            1000.0,
+        );
+        let result = apply_area(&mut client, platform(), &mut settings, area_request(None));
+        assert!(matches!(result, Err(error) if error.kind() == io::ErrorKind::TimedOut));
+    }
 }

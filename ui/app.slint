@@ -2445,6 +2445,7 @@ component AreaEditor inherits Rectangle {
         && root.draft-rotation.is-float() && root.draft-rotation.to-float() >= -360 && root.draft-rotation.to-float() <= 360
         && root.draft-frequency.is-float() && root.draft-frequency.to-float() >= 1 && root.draft-frequency.to-float() <= 1000;
     callback apply-area(string, string, string, string, string, string, int);
+    callback refresh-area();
 
     pure function same-number(a: string, b: string) -> bool {
         return a.is-float() && b.is-float() && abs(a.to-float() - b.to-float()) < 0.005;
@@ -2561,7 +2562,7 @@ component AreaEditor inherits Rectangle {
                         edited => { root.dirty = true; root.apply-state = "idle"; }
                         monitor-edited => { root.dirty = true; root.apply-state = "idle"; }
                         revert => { root.revert-draft(); }
-                        refresh => { root.revert-draft(); }
+                        refresh => { root.revert-draft(); root.refresh-area(); }
                         apply => {
                             root.apply-state = "waiting";
                             root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-frequency, root.draft-monitor-index);
@@ -2611,7 +2612,7 @@ component AreaEditor inherits Rectangle {
                         edited => { root.dirty = true; root.apply-state = "idle"; }
                         monitor-edited => { root.dirty = true; root.apply-state = "idle"; }
                         revert => { root.revert-draft(); }
-                        refresh => { root.revert-draft(); }
+                        refresh => { root.revert-draft(); root.refresh-area(); }
                         apply => {
                             root.apply-state = "waiting";
                             root.apply-area(root.draft-width, root.draft-height, root.draft-x, root.draft-y, root.draft-rotation, root.draft-frequency, root.draft-monitor-index);
@@ -2655,6 +2656,7 @@ component AreaPage inherits Rectangle {
     callback retry-detection();
     callback start-driver();
     callback apply-area(string, string, string, string, string, string, string, int);
+    callback refresh-area();
 
     AreaEditor {
         visible: root.backend-state == "ready" && root.device-name != "";
@@ -2675,6 +2677,7 @@ component AreaPage inherits Rectangle {
         apply-area(width, height, x, y, rotation, frequency, monitor) => {
             root.apply-area(root.device-name, width, height, x, y, rotation, frequency, monitor);
         }
+        refresh-area => { root.refresh-area(); }
     }
     if root.backend-state != "ready" || root.device-name == "": EmptyState {
         icon: "area";
@@ -2792,6 +2795,7 @@ component SettingsPage inherits Rectangle {
     in-out property <bool> start-with-system: false;
     in-out property <bool> start-minimized: false;
     in-out property <bool> close-to-tray: false;
+    in property <bool> default-close-to-tray: false;
     in-out property <bool> check-updates: true;
     in-out property <bool> pause-hidden: true;
     in-out property <bool> disable-unfocused-animations: false;
@@ -2851,7 +2855,7 @@ component SettingsPage inherits Rectangle {
         AppTheme.reduce-motion = false;
         root.start-with-system = false;
         root.start-minimized = false;
-        root.close-to-tray = false;
+        root.close-to-tray = root.default-close-to-tray;
         root.check-updates = true;
         root.pause-hidden = true;
         root.disable-unfocused-animations = false;
@@ -3265,7 +3269,7 @@ component SettingsPage inherits Rectangle {
                         horizontal-stretch: 1;
                         vertical-stretch: 1;
                         alignment: center;
-                        Text { text: "TabletFlow Next v14 (for developers)"; color: AppTheme.text-secondary; font-size: 12px; font-weight: 600; }
+                        Text { text: "TabletFlow Next v15 (for developers)"; color: AppTheme.text-secondary; font-size: 12px; font-weight: 600; }
                         Text { text: "Independent OpenTabletDriver frontend"; color: AppTheme.text-muted; font-size: 11px; }
                     }
                     LinkButton { label: "GitHub"; clicked => { root.open-github(); } }
@@ -3342,6 +3346,7 @@ export component MainWindow inherits Window {
     in-out property <bool> start-with-system: false;
     in-out property <bool> start-minimized: false;
     in-out property <bool> close-to-tray: false;
+    in property <bool> default-close-to-tray: false;
     in-out property <bool> check-updates: true;
     in-out property <bool> pause-hidden: true;
     in-out property <bool> disable-unfocused-animations: false;
@@ -3357,6 +3362,7 @@ export component MainWindow inherits Window {
     callback start-daemon();
     callback retry-backend();
     callback apply-area(string, string, string, string, string, string, string, int);
+    callback refresh-area();
     callback open-github();
     callback settings-changed();
     callback request-permissions();
@@ -3507,6 +3513,7 @@ export component MainWindow inherits Window {
                     apply-area(tablet, width, height, x, y, rotation, frequency, monitor) => {
                         root.apply-area(tablet, width, height, x, y, rotation, frequency, monitor);
                     }
+                    refresh-area => { root.refresh-area(); }
                 }
                 if root.active-page == "Settings": SettingsPage {
                     backend-state: root.backend-state;
@@ -3527,6 +3534,7 @@ export component MainWindow inherits Window {
                     start-with-system <=> root.start-with-system;
                     start-minimized <=> root.start-minimized;
                     close-to-tray <=> root.close-to-tray;
+                    default-close-to-tray: root.default-close-to-tray;
                     check-updates <=> root.check-updates;
                     pause-hidden <=> root.pause-hidden;
                     disable-unfocused-animations <=> root.disable-unfocused-animations;
