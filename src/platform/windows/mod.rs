@@ -31,7 +31,12 @@ fn self_test() -> io::Result<()> {
     let result = loop {
         if ipc::is_available() {
             let (events, _) = mpsc::channel();
-            let mut client = RpcClient::connect(platform(), events, 0)?;
+            let mut client = RpcClient::connect(
+                platform(),
+                events,
+                0,
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            )?;
             let tablets = client.call("GetTablets", json!([]))?;
             if !tablets.is_array() {
                 break Err(io::Error::new(

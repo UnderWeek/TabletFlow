@@ -339,6 +339,7 @@ pub fn run(
     command_receiver: Receiver<BackendCommand>,
     backend_events: Sender<BackendCommand>,
     displays: Vec<DisplayInfo>,
+    shutdown: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     let mut client: Option<RpcClient> = None;
     let mut pending_command = None;
@@ -462,13 +463,29 @@ pub fn run(
                 }
             }
             let generation = next_generation;
-            match RpcClient::connect(platform, backend_events.clone(), generation) {
+            match RpcClient::connect(
+                platform,
+                backend_events.clone(),
+                generation,
+                std::sync::Arc::clone(&shutdown),
+            ) {
                 Ok(connection) => {
                     client = Some(connection);
                     active_generation = generation;
                     next_generation += 1;
                     lifecycle.connected();
                     refresh_requested = true;
+                    // On platforms whose output pipeline needs rebuilding
+                    // after detection (Windows), a fresh connection must
+                    // route its first query through DetectTablets, not
+                    // GetTablets: the daemon may already have a tablet
+                    // cached from its own startup auto-detect (or from a
+                    // previous client), in which case GetTablets alone
+                    // would report "ready" without ever re-running the
+                    // GetSettings/SetSettings round trip that rebuilds the
+                    // pipeline. `||` preserves an explicit Detect the user
+                    // may already have queued.
+                    detect_requested = detect_requested || platform.restore_pipeline_after_detect();
                     driver_settings = None;
                     detection = DetectionSchedule::new(Instant::now());
                     sink.connection_state("daemon-starting");

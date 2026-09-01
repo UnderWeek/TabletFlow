@@ -11,17 +11,14 @@ fn managed() -> &'static Mutex<Option<Child>> {
 }
 
 fn candidates() -> Vec<PathBuf> {
+    // Packaged/current-exe-relative locations are checked before the
+    // target/otd dev-build fallback. CARGO_MANIFEST_DIR is baked in at
+    // compile time: on a machine that both built and packaged the app (the
+    // common local dev workflow), that path still exists at runtime, so if
+    // it were checked first a packaged build would silently launch the
+    // developer's target/otd daemon instead of its own bundled copy - a
+    // different build, potentially a different version.
     let mut candidates = Vec::new();
-    let runtime_id = match std::env::consts::ARCH {
-        "aarch64" => "linux-arm64",
-        "x86" => "linux-x86",
-        _ => "linux-x64",
-    };
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/otd")
-        .join(runtime_id);
-    candidates.push(target.join("OpenTabletDriver.Daemon"));
-    candidates.push(target.join("OpenTabletDriver.Daemon.dll"));
     if let Ok(executable) = std::env::current_exe() {
         if let Some(directory) = executable.parent() {
             for relative in [
@@ -38,6 +35,16 @@ fn candidates() -> Vec<PathBuf> {
         candidates.push(PathBuf::from(&root).join("OpenTabletDriver.Daemon"));
         candidates.push(PathBuf::from(root).join("OpenTabletDriver.Daemon.dll"));
     }
+    let runtime_id = match std::env::consts::ARCH {
+        "aarch64" => "linux-arm64",
+        "x86" => "linux-x86",
+        _ => "linux-x64",
+    };
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/otd")
+        .join(runtime_id);
+    candidates.push(target.join("OpenTabletDriver.Daemon"));
+    candidates.push(target.join("OpenTabletDriver.Daemon.dll"));
     candidates
 }
 fn daemon_path() -> Option<PathBuf> {

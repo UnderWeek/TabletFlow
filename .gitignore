@@ -6,3 +6,4 @@ OpenTabletDriver/**/bin/
 OpenTabletDriver/**/obj/
 **/*.rs.bk
 .DS_Store
+/graphify-out/

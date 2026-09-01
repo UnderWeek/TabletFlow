@@ -56,7 +56,12 @@ pub(super) fn connect() -> io::Result<Box<dyn Transport>> {
 
 pub(super) fn is_available() -> bool {
     let pipe = wide(PIPE_PATH);
-    if unsafe { WaitNamedPipeW(pipe.as_ptr(), 0) } != 0 {
+    // A timeout of 0 is NMPWAIT_USE_DEFAULT_WAIT, not "return immediately" -
+    // it makes this block for the pipe server's configured default timeout
+    // whenever the pipe exists but every server instance is busy. Pass an
+    // explicit 1ms timeout so this stays a cheap non-blocking probe, which
+    // matters since it's polled from the backend supervisor loop.
+    if unsafe { WaitNamedPipeW(pipe.as_ptr(), 1) } != 0 {
         return true;
     }
     (unsafe { GetLastError() }) == ERROR_SEM_TIMEOUT

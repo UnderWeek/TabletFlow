@@ -11,9 +11,61 @@ use crate::core::backend::BackendSink;
 use crate::core::models::BackendCommand;
 use crate::core::settings::Settings;
 use slint::ComponentHandle;
-use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Sender;
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::thread::JoinHandle;
+
+struct BackendHandles {
+    commands: Sender<BackendCommand>,
+    shutdown: Arc<AtomicBool>,
+    thread: Mutex<Option<JoinHandle<()>>>,
+}
+
+static BACKEND: OnceLock<BackendHandles> = OnceLock::new();
+
+/// Stops the backend supervisor and any daemon it owns. Safe to call more
+/// than once (only the first call does anything) and safe to call from an
+/// `atexit` handler, since it only touches a channel send, an atomic store,
+/// a thread join and the platform's own process-kill call - no panics, no
+/// allocation-heavy paths that would be unsound during process teardown.
+fn shutdown_backend(platform: &'static dyn platform::Platform) {
+    let Some(handles) = BACKEND.get() else {
+        return;
+    };
+    let Ok(mut slot) = handles.thread.lock() else {
+        return;
+    };
+    let Some(thread) = slot.take() else {
+        // Already shut down by the other call site.
+        return;
+    };
+    let _ = handles.commands.send(BackendCommand::Shutdown);
+    handles.shutdown.store(true, Ordering::Release);
+    let _ = thread.join();
+    platform.stop_daemon();
+}
+
+#[cfg(unix)]
+extern "C" fn atexit_shutdown_backend() {
+    // Safety net for macOS/Linux: the standard OS "Quit" gesture (Cmd+Q,
+    // Dock > Quit, an AppleScript `quit`, or logout) tears the process down
+    // through libc's exit() without slint::run_event_loop() ever returning,
+    // so the normal post-loop cleanup in main() is never reached and any
+    // daemon TabletFlow owns is orphaned. libc::atexit runs in-process
+    // before that teardown completes, so it's reachable here even though
+    // the graceful path below is not. Ordering matters: this stops the
+    // backend thread (which owns the reconnect/respawn loop) before
+    // killing the daemon, otherwise the still-running backend thread
+    // notices the daemon is gone and immediately spawns a replacement.
+    shutdown_backend(platform::current());
+}
 
 fn main() -> Result<(), slint::PlatformError> {
+    #[cfg(unix)]
+    unsafe {
+        libc::atexit(atexit_shutdown_backend);
+    }
     let platform = platform::current();
     platform.initialize_process();
 
@@ -56,6 +108,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let backend_events = backend_commands.clone();
     let sink: Arc<dyn BackendSink> = Arc::new(ui_bridge::UiSink::new(ui.as_weak()));
     let backend_displays = displays.clone();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let backend_shutdown = Arc::clone(&shutdown);
     let backend_thread = std::thread::spawn(move || {
         core::backend::run(
             platform,
@@ -63,7 +117,13 @@ fn main() -> Result<(), slint::PlatformError> {
             command_receiver,
             backend_events,
             backend_displays,
+            backend_shutdown,
         );
+    });
+    let _ = BACKEND.set(BackendHandles {
+        commands: backend_commands.clone(),
+        shutdown,
+        thread: Mutex::new(Some(backend_thread)),
     });
 
     let session = ui_bridge::wire(&ui, platform, backend_commands.clone(), displays)?;
@@ -74,9 +134,7 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     let event_loop_result = slint::run_event_loop();
 
-    let _ = backend_commands.send(BackendCommand::Shutdown);
-    let _ = backend_thread.join();
-    platform.stop_daemon();
+    shutdown_backend(platform);
     drop(session);
 
     event_loop_result
