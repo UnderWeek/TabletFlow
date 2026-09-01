@@ -10,6 +10,7 @@ use serde_json::json;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 pub struct WindowsPlatform;
@@ -21,25 +22,85 @@ pub fn platform() -> &'static dyn Platform {
 
 // The CI packaging workflow kills the whole self-test process after 240s.
 // This deadline is the single source of truth for how long self_test() as a
-// whole is allowed to run - the pipe wait AND every RPC call below all draw
-// from the same remaining budget, so no combination of slow steps can add up
-// to more than SELF_TEST_DEADLINE. That leaves headroom for daemon
-// start/stop teardown and log flushing before the workflow's own timeout
-// would otherwise kill the process mid-diagnostic.
+// whole is allowed to run, so it can report a clean, diagnosed timeout of
+// its own well before the workflow has to force-kill it. It has to be
+// enforced by a watchdog (see below) rather than just threaded through each
+// RPC call's deadline: a blocking Win32 named-pipe read/write has no
+// timeout of its own, so a stall inside that blocking I/O - not just inside
+// the RPC response wait - can't be bounded by polling Instant::now() on the
+// same thread that's stuck in the syscall.
 const SELF_TEST_DEADLINE: Duration = Duration::from_secs(200);
 
 // Production traffic uses a 180s rpc_timeout on DetectTablets/SetSettings to
 // tolerate slow enumeration on real hardware. The self-test never has real
 // hardware attached, so a slow response here means something is actually
-// wedged, not that a device is taking its time - a much tighter cap both
-// fails faster and (combined with SELF_TEST_DEADLINE) prevents the pipe wait
-// plus four RPC calls from ever summing past the workflow's own timeout.
+// wedged, not that a device is taking its time - a much tighter cap fails
+// faster and gives a precise "which call" diagnosis in the common case
+// where the stall is in the RPC response wait rather than in blocking I/O
+// the SELF_TEST_DEADLINE watchdog has to catch instead.
 const SELF_TEST_RPC_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn self_test_progress(message: impl AsRef<str>) {
     let message = message.as_ref();
     eprintln!("[self-test] {message}");
     runtime::log_line(format!("self-test: {message}"));
+}
+
+/// Connects and runs the real pipeline sequence backend.rs relies on, not
+/// just connectivity: DetectTablets (no physical tablet is required - an
+/// empty result is fine), GetSettings, SetSettings with those same
+/// settings, then GetSettings again to make sure the round trip doesn't
+/// wedge the daemon. GetTablets alone would only prove the pipe is open,
+/// not that this RPC sequence actually works end to end.
+fn run_self_test_rpc_sequence() -> io::Result<()> {
+    let (events, _) = mpsc::channel();
+    let mut client = RpcClient::connect(
+        platform(),
+        events,
+        0,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )?;
+    self_test_progress("RpcClient connected");
+
+    self_test_progress("DetectTablets begin");
+    let tablets = client.call_with_timeout("DetectTablets", json!([]), SELF_TEST_RPC_TIMEOUT)?;
+    self_test_progress("DetectTablets end");
+    if !tablets.is_array() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "DetectTablets returned a non-array result",
+        ));
+    }
+
+    self_test_progress("GetSettings begin");
+    let settings = client.call_with_timeout("GetSettings", json!([]), SELF_TEST_RPC_TIMEOUT)?;
+    self_test_progress("GetSettings end");
+    if settings.is_null() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "GetSettings returned null",
+        ));
+    }
+
+    self_test_progress("SetSettings begin");
+    client.call_with_timeout("SetSettings", json!([settings]), SELF_TEST_RPC_TIMEOUT)?;
+    self_test_progress("SetSettings end");
+
+    self_test_progress("final GetSettings begin");
+    let settings_after =
+        client.call_with_timeout("GetSettings", json!([]), SELF_TEST_RPC_TIMEOUT)?;
+    self_test_progress("final GetSettings end");
+    if settings_after.is_null() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "GetSettings returned null after SetSettings",
+        ));
+    }
+
+    self_test_progress("RpcClient drop begin");
+    drop(client);
+    self_test_progress("RpcClient drop end");
+    Ok(())
 }
 
 fn self_test() -> io::Result<()> {
@@ -56,79 +117,36 @@ fn self_test() -> io::Result<()> {
     let result = loop {
         if ipc::is_available() {
             self_test_progress("named pipe available");
-            let (events, _) = mpsc::channel();
-            let mut client = RpcClient::connect(
-                platform(),
-                events,
-                0,
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            )?;
-            self_test_progress("RpcClient connected");
 
-            // Exercises the real pipeline sequence backend.rs relies on, not
-            // just connectivity: DetectTablets (no physical tablet is
-            // required - an empty result is fine), GetSettings, SetSettings
-            // with those same settings, then GetSettings again to make sure
-            // the round trip doesn't wedge the daemon. GetTablets alone
-            // would only prove the pipe is open, not that this RPC sequence
-            // actually works end to end. Each call's timeout is capped by
-            // the remaining slice of the shared overall_deadline so a stall
-            // on an earlier call can't let a later call still wait the full
-            // SELF_TEST_RPC_TIMEOUT.
-            let remaining = |deadline: Instant| -> io::Result<Duration> {
-                let left = deadline.saturating_duration_since(Instant::now());
-                if left.is_zero() {
+            // The RPC sequence runs on its own thread so this thread can
+            // bound the whole exchange with a real wall-clock watchdog: if
+            // run_self_test_rpc_sequence() is stuck inside a blocking
+            // Win32 read/write syscall that never notices SELF_TEST_RPC_TIMEOUT
+            // (observed in CI: DetectTablets can stall past its own
+            // per-call timeout with no further progress logged), this
+            // thread still reports a bounded, diagnosed failure instead of
+            // waiting for the external CI harness to force-kill the
+            // process at its own, coarser timeout.
+            let (sequence_tx, sequence_rx) = mpsc::channel();
+            thread::spawn(move || {
+                let _ = sequence_tx.send(run_self_test_rpc_sequence());
+            });
+            let wait = overall_deadline.saturating_duration_since(Instant::now());
+            break match sequence_rx.recv_timeout(wait) {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    self_test_progress(
+                        "overall self-test deadline exceeded with an RPC call still in flight; \
+                         the worker thread is stuck in blocking I/O that cannot be cancelled, \
+                         so this process is reporting failure and exiting now instead of \
+                         waiting for the external timeout",
+                    );
                     Err(io::Error::new(
                         io::ErrorKind::TimedOut,
                         "self-test exceeded its overall deadline",
                     ))
-                } else {
-                    Ok(left.min(SELF_TEST_RPC_TIMEOUT))
                 }
             };
-
-            self_test_progress("DetectTablets begin");
-            let timeout = remaining(overall_deadline)?;
-            let tablets = client.call_with_timeout("DetectTablets", json!([]), timeout)?;
-            self_test_progress("DetectTablets end");
-            if !tablets.is_array() {
-                break Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "DetectTablets returned a non-array result",
-                ));
-            }
-
-            self_test_progress("GetSettings begin");
-            let timeout = remaining(overall_deadline)?;
-            let settings = client.call_with_timeout("GetSettings", json!([]), timeout)?;
-            self_test_progress("GetSettings end");
-            if settings.is_null() {
-                break Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "GetSettings returned null",
-                ));
-            }
-
-            self_test_progress("SetSettings begin");
-            let timeout = remaining(overall_deadline)?;
-            client.call_with_timeout("SetSettings", json!([settings]), timeout)?;
-            self_test_progress("SetSettings end");
-
-            self_test_progress("final GetSettings begin");
-            let timeout = remaining(overall_deadline)?;
-            let settings_after = client.call_with_timeout("GetSettings", json!([]), timeout)?;
-            self_test_progress("final GetSettings end");
-            if settings_after.is_null() {
-                break Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "GetSettings returned null after SetSettings",
-                ));
-            }
-
-            self_test_progress("RpcClient drop begin");
-            drop(client);
-            self_test_progress("RpcClient drop end");
-            break Ok(());
         }
         if started_owned && !daemon::owned_is_running() {
             break Err(io::Error::other(
