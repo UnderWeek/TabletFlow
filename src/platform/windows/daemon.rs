@@ -140,8 +140,10 @@ fn terminate_stale_packaged_daemons(daemon_path: &Path) {
     let Some(snapshot) = KernelHandle::new(snapshot) else {
         return;
     };
-    let mut entry = PROCESSENTRY32W::default();
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
     let mut has_entry = unsafe { Process32FirstW(snapshot.raw(), &mut entry) } != 0;
     while has_entry {
         let process = unsafe {
