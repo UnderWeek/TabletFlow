@@ -1,8 +1,8 @@
 use crate::core::models::{AreaRequest, BackendCommand, BackendSnapshot};
 use crate::core::rpc::{query_tablets, DriverRpc, RpcClient};
 use crate::core::state::{
-    ConnectionAction, DaemonLifecycle, DetectionSchedule, BACKEND_RECONNECT_INTERVAL,
-    PIPELINE_REBUILD_INTERVAL, TABLET_POLL_INTERVAL,
+    ConnectionAction, DaemonLifecycle, DetectionSchedule, PipelineRebuildSchedule,
+    BACKEND_RECONNECT_INTERVAL, TABLET_POLL_INTERVAL,
 };
 use crate::core::validation;
 use crate::display::{selected_display_index, DisplayInfo};
@@ -395,7 +395,7 @@ pub fn run(
     let mut next_generation = 1;
     let mut lifecycle = DaemonLifecycle::new();
     let mut detection = DetectionSchedule::new(Instant::now());
-    let mut last_pipeline_rebuild = Instant::now();
+    let mut pipeline_rebuild = PipelineRebuildSchedule::new(Instant::now());
     platform.log("backend supervisor started");
 
     'supervisor: loop {
@@ -572,7 +572,7 @@ pub fn run(
                     } else {
                         detection.tablet_found();
                         if detect {
-                            last_pipeline_rebuild = Instant::now();
+                            pipeline_rebuild.note_rebuilt(Instant::now());
                         }
                     }
                     sink.snapshot(snapshot);
@@ -637,8 +637,7 @@ pub fn run(
                 let due_for_no_tablet_retry = no_tablet && detection.take_due(now);
                 let due_for_pipeline_rebuild = !no_tablet
                     && platform.restore_pipeline_after_detect()
-                    && now.saturating_duration_since(last_pipeline_rebuild)
-                        >= PIPELINE_REBUILD_INTERVAL;
+                    && pipeline_rebuild.due(now);
                 if due_for_no_tablet_retry || due_for_pipeline_rebuild {
                     detect_requested = true;
                 }

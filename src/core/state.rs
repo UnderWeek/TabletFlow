@@ -22,7 +22,14 @@ pub const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
 /// keeps returning it), so the no-tablet retry schedule below never fires
 /// either. Periodically re-running detection here is what a manual tablet
 /// unplug/replug effectively forces the driver to do anyway.
-pub const PIPELINE_REBUILD_INTERVAL: Duration = Duration::from_secs(45);
+///
+/// This is deliberately long, not a quick poll: OpenTabletDriver's
+/// `SetSettings` disposes and reconstructs every device's `OutputMode` as
+/// part of this round trip, which briefly interrupts pen tracking. Rebuilding
+/// too often would trade a rare stuck-pipeline bug for a recurring hiccup
+/// during normal, healthy use, so this stays a rare safety net rather than a
+/// steady-state poll.
+pub const PIPELINE_REBUILD_INTERVAL: Duration = Duration::from_secs(600);
 const DETECT_RETRY_DELAYS: [Duration; 6] = [
     Duration::ZERO,
     Duration::from_secs(2),
@@ -193,6 +200,33 @@ impl DetectionSchedule {
     }
 }
 
+/// Tracks when the Windows pipeline-rebuild safety net (see
+/// `PIPELINE_REBUILD_INTERVAL`) is next allowed to fire. Kept as its own
+/// small, tested unit - like `DetectionSchedule` above - rather than as raw
+/// `Instant` math inline in the backend loop, so the reset/due conditions
+/// have direct coverage independent of the loop's control flow.
+#[derive(Debug)]
+pub struct PipelineRebuildSchedule {
+    last_rebuild: Instant,
+}
+
+impl PipelineRebuildSchedule {
+    pub fn new(now: Instant) -> Self {
+        Self { last_rebuild: now }
+    }
+
+    /// True once `PIPELINE_REBUILD_INTERVAL` has elapsed since the last
+    /// rebuild (or since construction, if none has happened yet).
+    pub fn due(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.last_rebuild) >= PIPELINE_REBUILD_INTERVAL
+    }
+
+    /// Call once a rebuild has actually been requested, to restart the wait.
+    pub fn note_rebuilt(&mut self, now: Instant) {
+        self.last_rebuild = now;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +393,30 @@ mod tests {
             lifecycle.next_action(Instant::now(), false, false),
             ConnectionAction::StartOwnedDaemon
         );
+    }
+
+    #[test]
+    fn pipeline_rebuild_is_not_due_before_the_interval_elapses() {
+        let start = Instant::now();
+        let schedule = PipelineRebuildSchedule::new(start);
+        assert!(!schedule.due(start + PIPELINE_REBUILD_INTERVAL - Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn pipeline_rebuild_becomes_due_once_the_interval_elapses() {
+        let start = Instant::now();
+        let schedule = PipelineRebuildSchedule::new(start);
+        assert!(schedule.due(start + PIPELINE_REBUILD_INTERVAL));
+    }
+
+    #[test]
+    fn noting_a_rebuild_restarts_the_wait() {
+        let start = Instant::now();
+        let mut schedule = PipelineRebuildSchedule::new(start);
+        let rebuilt_at = start + PIPELINE_REBUILD_INTERVAL;
+        assert!(schedule.due(rebuilt_at));
+        schedule.note_rebuilt(rebuilt_at);
+        assert!(!schedule.due(rebuilt_at + Duration::from_secs(1)));
+        assert!(schedule.due(rebuilt_at + PIPELINE_REBUILD_INTERVAL));
     }
 }
