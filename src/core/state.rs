@@ -11,6 +11,18 @@ pub const IPC_STARTUP_DEADLINE: Duration = Duration::from_secs(180);
 /// pointing at a hung-but-alive process for minutes.
 pub const IPC_RECONNECT_GRACE: Duration = Duration::from_secs(20);
 pub const BACKEND_RECONNECT_INTERVAL: Duration = Duration::from_millis(1200);
+/// How often to force a full pipeline rebuild (`DetectTablets` ->
+/// `GetSettings` -> `SetSettings`) while a tablet is already reporting ready,
+/// on platforms where `Platform::restore_pipeline_after_detect()` is true
+/// (Windows). OpenTabletDriver's Windows HID watcher does not always emit a
+/// `TabletsChanged`/`Resynchronize` notification when the physical link
+/// glitches without a full USB disconnect (e.g. a cable reseat or a sleep/
+/// wake cycle), so without this fallback TabletFlow can be left pointing at
+/// a stalled pipeline indefinitely - the tablet still reads "ready" (`GetTablets`
+/// keeps returning it), so the no-tablet retry schedule below never fires
+/// either. Periodically re-running detection here is what a manual tablet
+/// unplug/replug effectively forces the driver to do anyway.
+pub const PIPELINE_REBUILD_INTERVAL: Duration = Duration::from_secs(45);
 const DETECT_RETRY_DELAYS: [Duration; 6] = [
     Duration::ZERO,
     Duration::from_secs(2),
